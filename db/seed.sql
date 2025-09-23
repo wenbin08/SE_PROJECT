@@ -1,4 +1,4 @@
-USE ping_pong_training;
+USE tt_training;
 
 -- 清空所有表的数据（按依赖关系倒序删除）
 SET FOREIGN_KEY_CHECKS = 0;
@@ -244,38 +244,3 @@ INSERT INTO tournament_signup (user_id, group_level, paid) VALUES
 ((SELECT id FROM user WHERE username='student012'), 'A', 1),
 ((SELECT id FROM user WHERE username='student013'), 'B', 0),
 ((SELECT id FROM user WHERE username='student014'), 'C', 0);
-
--- 添加更多审计日志
-INSERT INTO audit_log (action, actor_id, details) VALUES 
-('user_login', (SELECT id FROM user WHERE username='admin001'), '{"ip": "192.168.1.100", "timestamp": "2025-09-19 08:00:00"}'),
-('coach_approve', (SELECT id FROM user WHERE username='admin001'), '{"coach_id": "coach011", "approved": true}'),
-('reservation_create', (SELECT id FROM user WHERE username='student011'), '{"coach_id": "coach011", "date": "2025-09-19", "time": "15:00"}'),
-('payment_recharge', (SELECT id FROM user WHERE username='student011'), '{"amount": 800.00, "method": "alipay"}'),
-('coach_select', (SELECT id FROM user WHERE username='student012'), '{"coach_id": "coach012", "status": "approved"}'),
-('reservation_confirm', (SELECT id FROM user WHERE username='coach011'), '{"reservation_id": "latest", "confirmed": true}'),
-('tournament_signup', (SELECT id FROM user WHERE username='student012'), '{"group": "A", "fee_paid": true}'),
-('lesson_complete', (SELECT id FROM user WHERE username='coach001'), '{"student_id": "student001", "date": "2025-09-18"}');
-
-
--- 对应已完成的预约的评价
-((SELECT id FROM reservation WHERE start_time = '2025-09-18 09:00:00' AND status = 'completed' LIMIT 1), 
- (SELECT id FROM user WHERE username='student001'), 
- (SELECT id FROM user WHERE username='coach001'), 
- 5, '教练非常专业，教学方法很好，技术提升明显！'),
-
-((SELECT id FROM reservation WHERE start_time = '2025-09-18 14:00:00' AND status = 'completed' LIMIT 1), 
- (SELECT id FROM user WHERE username='student004'), 
- (SELECT id FROM user WHERE username='coach005'), 
- 4, '教练很耐心，课程安排合理，希望继续保持'),
-
-((SELECT id FROM reservation WHERE start_time = '2025-09-18 16:00:00' AND status = 'completed' LIMIT 1), 
- (SELECT id FROM user WHERE username='student005'), 
- (SELECT id FROM user WHERE username='coach006'), 
- 5, '非常满意这次课程，技术讲解详细，受益匪浅');
-
--- 添加更多已完成但未评价的预约，供测试使用
-INSERT INTO reservation (campus_id, coach_id, student_id, table_id, start_time, end_time, status, paid, fee) VALUES
-(1, (SELECT id FROM user WHERE username='coach002'), (SELECT id FROM user WHERE username='student002'), 2, '2025-09-17 10:00:00', '2025-09-17 11:00:00', 'completed', 1, 120.00),
-(2, (SELECT id FROM user WHERE username='coach003'), (SELECT id FROM user WHERE username='student003'), 8, '2025-09-17 15:00:00', '2025-09-17 16:00:00', 'completed', 1, 100.00),
-(3, (SELECT id FROM user WHERE username='coach004'), (SELECT id FROM user WHERE username='student006'), 15, '2025-09-17 18:00:00', '2025-09-17 19:00:00', 'completed', 1, 110.00),
-(1, (SELECT id FROM user WHERE username='coach007'), (SELECT id FROM user WHERE username='student007'), 3, '2025-09-16 09:00:00', '2025-09-16 10:00:00', 'completed', 1, 130.00);

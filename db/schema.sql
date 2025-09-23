@@ -1,6 +1,6 @@
 -- 基础库
-CREATE DATABASE IF NOT EXISTS ping_pong_training CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE ping_pong_training;
+CREATE DATABASE IF NOT EXISTS tt_training CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE tt_training;
 
 -- 授权/许可
 CREATE TABLE IF NOT EXISTS license (
