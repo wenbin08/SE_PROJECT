@@ -6,6 +6,18 @@ const path = require('path');
 
 const app = express();
 
+// 全局错误处理，防止服务器崩溃
+process.on('uncaughtException', (err) => {
+  console.error('未捕获的异常:', err);
+  console.error('错误堆栈:', err.stack);
+  // 不退出进程，继续运行
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('未处理的Promise拒绝:', reason);
+  console.error('Promise:', promise);
+});
+
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(path.join(__dirname, 'views')));
@@ -26,6 +38,15 @@ const db = mysql.createConnection({
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASS || '123456',
   database: process.env.DB_NAME || 'tt_training'
+});
+
+// 数据库连接错误处理
+db.on('error', (err) => {
+  console.error('数据库连接错误:', err);
+  if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+    console.log('重新连接数据库...');
+    // 这里可以添加重连逻辑
+  }
 });
 
 db.connect((err) => {
@@ -51,8 +72,13 @@ db.connect((err) => {
 function logAudit(action, actorId, detailsObj) {
   try {
     const details = detailsObj ? JSON.stringify(detailsObj) : null;
-    db.query(`INSERT INTO audit_log (action, actor_id, details) VALUES (?, ?, ?)`, [action, actorId || null, details]);
-  } catch(e) { /* 忽略 */ }
+    db.query(`INSERT INTO audit_log (action, actor_id, details) VALUES (?, ?, ?)`, 
+      [action, actorId || null, details], (err) => {
+        if (err) console.error('审计日志记录失败:', err);
+      });
+  } catch(e) { 
+    console.error('logAudit函数异常:', e);
+  }
 }
 
 // 密码验证函数（已简化，允许任何密码）
@@ -241,8 +267,11 @@ app.post('/api/coach/select', (req, res) => {
     if (cnt_coach >= 20) return res.status(400).json({ error: '该教练名额已满' });
     db.query(`INSERT INTO coach_student (coach_id, student_id, status) VALUES (?, ?, 'pending') ON DUPLICATE KEY UPDATE status='pending'`, [coach_id, student_id], (e) => {
       if (e) return res.status(500).json({ error: '提交失败' });
-      // 通知教练有新的申请
-      db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '双选申请', '有学员申请与你建立双选关系，请审核')`, [coach_id]);
+      // 通知教练有新的申请，带错误处理
+      db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '双选申请', '有学员申请与你建立双选关系，请审核')`, 
+        [coach_id], (err) => {
+          if (err) console.error('发送双选申请消息失败:', err);
+        });
       logAudit('coach_select_request', student_id, { coach_id, student_id });
       res.json({ success: true });
     });
@@ -269,9 +298,12 @@ app.post('/api/coach/select/approve', (req, res) => {
   db.query(`UPDATE coach_student SET status=? WHERE coach_id=? AND student_id=?`, [status, coach_id, student_id], (err, r) => {
     if (err) return res.status(500).json({ error: '处理失败' });
     if (r.affectedRows === 0) return res.status(404).json({ error: '申请不存在' });
-    // 通知学员审批结果
+    // 通知学员审批结果，带错误处理
     const msg = approve ? '您的双选申请已通过' : '您的双选申请被拒绝';
-    db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '双选结果', ?)`, [student_id, msg]);
+    db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '双选结果', ?)`, 
+      [student_id, msg], (err) => {
+        if (err) console.error('发送双选结果消息失败:', err);
+      });
     logAudit('coach_select_approve', coach_id, { coach_id, student_id, approve });
     res.json({ success: true });
   });
@@ -501,8 +533,11 @@ app.post('/api/reservations', (req, res) => {
                      VALUES (?, ?, ?, ?, ?, ?, 'pending')`;
         db.query(ins, [campus_id, coach_id, student_id, tid, fmt(start), fmt(end)], (e5, r5)=>{
           if (e5) return res.status(500).json({ error: '创建失败' });
-          // 发消息给教练
-          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '预约申请', '有新的预约申请待确认')`, [coach_id]);
+          // 发消息给教练，带错误处理
+          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '预约申请', '有新的预约申请待确认')`, 
+            [coach_id], (err) => {
+              if (err) console.error('发送预约申请消息失败:', err);
+            });
           logAudit('reservation_create', student_id, { reservation_id: r5.insertId, coach_id, campus_id, start_time, end_time, table_id: tid });
           res.json({ success: true, reservation_id: r5.insertId, table_id: tid });
         });
@@ -527,7 +562,17 @@ app.post('/api/account/recharge', (req, res) => {
   const upsert = `INSERT INTO account (user_id, balance) VALUES (?, ?) ON DUPLICATE KEY UPDATE balance=balance+VALUES(balance)`;
   db.query(upsert, [user_id, amount], (e1)=>{
     if (e1) return res.status(500).json({ error: '充值失败' });
-  db.query(`INSERT INTO \`transaction\` (user_id, amount, type, description) VALUES (?, ?, 'recharge', ?)`, [user_id, amount, `${method === 'wechat' ? '微信' : method === 'alipay' ? '支付宝' : '线下'}充值`]);
+    
+    // 添加交易记录，带错误处理
+    db.query(`INSERT INTO \`transaction\` (user_id, amount, type, description) VALUES (?, ?, 'recharge', ?)`, 
+      [user_id, amount, `${method === 'wechat' ? '微信' : method === 'alipay' ? '支付宝' : '线下'}充值`], 
+      (e2) => {
+        if (e2) {
+          console.error('插入交易记录失败:', e2);
+          // 不返回错误，因为充值已经成功
+        }
+      });
+    
     res.json({ success: true });
   });
 });
@@ -573,9 +618,24 @@ app.post('/api/reservations/:id/confirm', (req, res) => {
       if (bal < fee) return res.status(400).json({ error: '余额不足，无法确认' });
       db.query(`UPDATE account SET balance=balance-? WHERE user_id=?`, [fee, r.student_id], (e3)=>{
         if (e3) return res.status(500).json({ error: '扣费失败' });
-  db.query(`INSERT INTO \`transaction\` (user_id, amount, type, ref_id) VALUES (?, ?, 'reservation_fee', ?)`, [r.student_id, -fee, r.id]);
-        db.query(`UPDATE reservation SET status='confirmed' WHERE id=?`, [id]);
-        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '预约确认', '您的预约已被教练确认')`, [r.student_id]);
+        
+        // 插入交易记录，带错误处理
+        db.query(`INSERT INTO \`transaction\` (user_id, amount, type, ref_id) VALUES (?, ?, 'reservation_fee', ?)`, 
+          [r.student_id, -fee, r.id], (e4) => {
+            if (e4) console.error('插入交易记录失败:', e4);
+          });
+        
+        // 更新预约状态，带错误处理
+        db.query(`UPDATE reservation SET status='confirmed' WHERE id=?`, [id], (e5) => {
+          if (e5) console.error('更新预约状态失败:', e5);
+        });
+        
+        // 发送确认消息，带错误处理
+        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '预约确认', '您的预约已被教练确认')`, 
+          [r.student_id], (e6) => {
+            if (e6) console.error('发送确认消息失败:', e6);
+          });
+        
         logAudit('reservation_confirm', r.coach_id, { reservation_id: r.id, fee });
         res.json({ success: true, fee });
       });
@@ -632,9 +692,12 @@ app.post('/api/reservations/:id/cancel', (req, res) => {
         // 第一次发起取消
         db.query(`UPDATE reservation SET cancel_request_by=? WHERE id=?`, [by, id], (e3)=>{
           if (e3) return res.status(500).json({ error: '提交失败' });
-          // 通知对方确认
+          // 通知对方确认，带错误处理
           const recipient = by==='student'? r.coach_id : r.student_id;
-          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '取消申请', '对方发起取消申请，需确认')`, [recipient]);
+          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '取消申请', '对方发起取消申请，需确认')`, 
+            [recipient], (e4) => {
+              if (e4) console.error('发送取消申请通知失败:', e4);
+            });
           res.json({ success: true, pending_confirm: true });
         });
       } else {
@@ -642,9 +705,14 @@ app.post('/api/reservations/:id/cancel', (req, res) => {
         if (!confirm) return res.status(400).json({ error: '请携带 confirm=true 进行确认' });
         // 如果已付款（confirmed）则退款
         const finalize = ()=>{
-          db.query(`UPDATE reservation SET status='canceled' WHERE id=?`, [id]);
+          db.query(`UPDATE reservation SET status='canceled' WHERE id=?`, [id], (e7) => {
+            if (e7) console.error('更新预约状态为取消失败:', e7);
+          });
           const recipient = by==='student'? r.coach_id : r.student_id;
-          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '取消成功', '预约已取消并处理完毕')`, [recipient]);
+          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '取消成功', '预约已取消并处理完毕')`, 
+            [recipient], (e8) => {
+              if (e8) console.error('发送取消成功通知失败:', e8);
+            });
           logAudit('reservation_cancel', by==='student'? r.student_id : r.coach_id, { reservation_id: r.id });
           res.json({ success: true });
         };
@@ -656,7 +724,11 @@ app.post('/api/reservations/:id/cancel', (req, res) => {
             const up = `INSERT INTO account (user_id, balance) VALUES (?, ?) ON DUPLICATE KEY UPDATE balance=balance+VALUES(balance)`;
             db.query(up, [r.student_id, fee], (e5)=>{
               if (e5) return res.status(500).json({ error: '退款失败' });
-              db.query(`INSERT INTO \`transaction\` (user_id, amount, type, ref_id) VALUES (?, ?, 'refund', ?)`, [r.student_id, fee, r.id]);
+              // 添加退款交易记录，带错误处理
+              db.query(`INSERT INTO \`transaction\` (user_id, amount, type, ref_id) VALUES (?, ?, 'refund', ?)`, 
+                [r.student_id, fee, r.id], (e6) => {
+                  if (e6) console.error('插入退款交易记录失败:', e6);
+                });
               finalize();
             });
           });
@@ -904,8 +976,16 @@ setInterval(()=>{
       db.query(`SELECT 1 FROM message WHERE title='开课提醒' AND content LIKE ? LIMIT 1`, [`%预约ID: ${r.id}%`], (e2, exist)=>{
         if (e2) return;
         if (exist && exist.length>0) return;
-        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '开课提醒', ?)`, [r.student_id, content]);
-        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '开课提醒', ?)`, [r.coach_id, content]);
+        // 发送开课提醒给学员，带错误处理
+        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '开课提醒', ?)`, 
+          [r.student_id, content], (err) => {
+            if (err) console.error('发送开课提醒给学员失败:', err);
+          });
+        // 发送开课提醒给教练，带错误处理
+        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '开课提醒', ?)`, 
+          [r.coach_id, content], (err) => {
+            if (err) console.error('发送开课提醒给教练失败:', err);
+          });
       });
     });
   });
@@ -1190,20 +1270,30 @@ app.post('/api/student/change-coach-request', (req, res) => {
           const newCoachMessage = `学员${studentName}申请将您设为新教练，请查看并处理申请ID: ${requestId}`;
           const adminMessage = `学员${studentName}提交了更换教练申请，请查看并处理申请ID: ${requestId}`;
           
-          // 发送给当前教练
+          // 发送给当前教练，带错误处理
           db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换申请', ?)`, 
-            [current_coach_id, currentCoachMessage]);
+            [current_coach_id, currentCoachMessage], (err) => {
+              if (err) console.error('发送给当前教练的消息失败:', err);
+            });
           
-          // 发送给新教练
+          // 发送给新教练，带错误处理
           db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换申请', ?)`, 
-            [new_coach_id, newCoachMessage]);
+            [new_coach_id, newCoachMessage], (err) => {
+              if (err) console.error('发送给新教练的消息失败:', err);
+            });
           
-          // 发送给校区管理员
+          // 发送给校区管理员，带错误处理
           db.query(`SELECT id FROM user WHERE role='campus_admin' AND campus_id=?`, 
             [info.student_campus], (err, admins) => {
+            if (err) {
+              console.error('查询校区管理员失败:', err);
+              return;
+            }
             if (admins && admins.length > 0) {
               db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换申请', ?)`, 
-                [admins[0].id, adminMessage]);
+                [admins[0].id, adminMessage], (err) => {
+                  if (err) console.error('发送给管理员的消息失败:', err);
+                });
             }
           });
           
@@ -1315,9 +1405,11 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
           [response_text || '拒绝', id], (err) => {
           if (err) return res.status(500).json({ error: '更新失败' });
           
-          // 发送拒绝消息给学员
+          // 发送拒绝消息给学员，带错误处理
           db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换申请被拒绝', ?)`, 
-            [request.student_id, `您的教练更换申请已被拒绝。拒绝原因: ${response_text || '无'}`]);
+            [request.student_id, `您的教练更换申请已被拒绝。拒绝原因: ${response_text || '无'}`], (err) => {
+              if (err) console.error('发送拒绝消息失败:', err);
+            });
           
           logAudit('coach_change_rejected', user_id, { request_id: id, reason: response_text });
           res.json({ success: true, message: '已拒绝申请' });
@@ -1352,7 +1444,9 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
             
             const statusMsg = `您的教练更换申请进度更新: ${approvalStatus.join('，')}。还需要其他人员确认。`;
             db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换申请进度', ?)`, 
-              [req.student_id, statusMsg]);
+              [req.student_id, statusMsg], (err) => {
+                if (err) console.error('发送进度消息失败:', err);
+              });
             
             res.json({ success: true, message: '已记录您的同意，等待其他人员确认' });
           }
@@ -1376,17 +1470,23 @@ function executeCoachChange(studentId, currentCoachId, newCoachId, requestId, re
       // 3. 发送成功消息给所有相关人员
       const successMsg = `教练更换已完成，学员现在的教练已更新。`;
       
-      // 发送给学员
+      // 发送给学员，带错误处理
       db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换成功', ?)`, 
-        [studentId, successMsg]);
+        [studentId, successMsg], (err) => {
+          if (err) console.error('发送给学员的成功消息失败:', err);
+        });
       
-      // 发送给新教练
+      // 发送给新教练，带错误处理
       db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '新学员加入', '您有新的学员加入，请关注。')`, 
-        [newCoachId]);
+        [newCoachId], (err) => {
+          if (err) console.error('发送给新教练的消息失败:', err);
+        });
       
-      // 发送给前教练
+      // 发送给前教练，带错误处理
       db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '学员转出通知', '您的学员已转至其他教练。')`, 
-        [currentCoachId]);
+        [currentCoachId], (err) => {
+          if (err) console.error('发送给前教练的消息失败:', err);
+        });
       
       logAudit('coach_change_success', studentId, { 
         old_coach: currentCoachId, 
@@ -1648,8 +1748,11 @@ app.put('/api/admin/user/:id', (req, res) => {
       db.query(sql, params, (err, result) => {
         if (err) return res.status(500).json({ error: '更新失败' });
         
-        // 通知用户信息被修改
-        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '个人信息更新', '您的个人信息已被管理员更新')`, [id]);
+        // 通知用户信息被修改，带错误处理
+        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '个人信息更新', '您的个人信息已被管理员更新')`, 
+          [id], (err) => {
+            if (err) console.error('发送个人信息更新消息失败:', err);
+          });
         
         logAudit('admin_user_update', null, { user_id: id, fields: fields.map(f => f.split('=')[0]) });
         res.json({ success: true });
@@ -2069,8 +2172,17 @@ app.post('/api/admin/recharge', (req, res) => {
   db.query(upsert, [user_id, amount], (e1) => {
     if (e1) return res.status(500).json({ error: '充值失败' });
     
-    db.query(`INSERT INTO \`transaction\` (user_id, amount, type) VALUES (?, ?, 'recharge')`, [user_id, amount]);
-    db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '账户充值', CONCAT('管理员为您充值￥', ?))`, [user_id, amount]);
+    // 添加交易记录，带错误处理
+    db.query(`INSERT INTO \`transaction\` (user_id, amount, type) VALUES (?, ?, 'recharge')`, 
+      [user_id, amount], (e2) => {
+        if (e2) console.error('插入交易记录失败:', e2);
+      });
+    
+    // 发送消息通知，带错误处理
+    db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '账户充值', CONCAT('管理员为您充值￥', ?))`, 
+      [user_id, amount], (e3) => {
+        if (e3) console.error('发送充值通知失败:', e3);
+      });
     
     logAudit('admin_recharge', admin_id, { user_id, amount });
     res.json({ success: true });
@@ -2898,13 +3010,16 @@ app.post('/api/coach/change-request', (req, res) => {
             });
           }
           
-          // 批量发送消息
+          // 批量发送消息，带错误处理
           messages.forEach(msg => {
-            sendMessage(msg.recipient_id, msg.title, msg.content);
+            db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, ?, ?)`, 
+              [msg.recipient_id, msg.title, msg.content], (err) => {
+                if (err) console.error('发送教练更换申请消息失败:', err);
+              });
           });
         });
         
-        logAudit('coach_change_request', student_id, { old_coach_id, new_coach_id });
+        logAudit('coach_change_request', student_id, { current_coach_id, new_coach_id });
         res.json({ success: true, request_id: requestId });
       });
     });
@@ -2914,53 +3029,72 @@ app.post('/api/coach/change-request', (req, res) => {
 // 处理教练更换申请
 app.post('/api/coach/change-request/:id/respond', (req, res) => {
   const requestId = req.params.id;
-  const { user_id, user_type, approve } = req.body;
+  const { user_id, user_type, approve, response_text } = req.body;
   
   if (!user_id || !user_type || approve === undefined) {
     return res.status(400).json({ error: '缺少参数' });
   }
   
   // 获取申请详情
-  db.query('SELECT * FROM coach_change_requests WHERE id = ? AND status = "pending"', [requestId], (err, requests) => {
+  db.query('SELECT * FROM coach_change_request WHERE id = ? AND status = "pending"', [requestId], (err, requests) => {
     if (err) return res.status(500).json({ error: '查询失败' });
     if (requests.length === 0) return res.status(404).json({ error: '申请不存在或已处理' });
     
     const request = requests[0];
-    const updateField = `${user_type}_approved`;
+    let updateField, newStatus;
+    
+    // 根据用户类型确定更新字段和状态
+    if (user_type === 'current_coach') {
+      updateField = 'current_coach_response';
+      newStatus = approve ? 'current_coach_approved' : 'rejected';
+    } else if (user_type === 'new_coach') {
+      updateField = 'new_coach_response';
+      newStatus = approve ? 'new_coach_approved' : 'rejected';
+    } else if (user_type === 'admin') {
+      updateField = 'admin_response';
+      newStatus = approve ? 'admin_approved' : 'rejected';
+    } else {
+      return res.status(400).json({ error: '无效的用户类型' });
+    }
     
     // 验证用户权限
-    if ((user_type === 'current_coach' && request.current_coach_id !== user_id) ||
-        (user_type === 'new_coach' && request.new_coach_id !== user_id) ||
-        (user_type === 'admin' && !isAdminForStudent(user_id, request.student_id))) {
+    if ((user_type === 'current_coach' && request.current_coach_id !== parseInt(user_id)) ||
+        (user_type === 'new_coach' && request.new_coach_id !== parseInt(user_id))) {
       return res.status(403).json({ error: '无权限处理此申请' });
     }
     
-    // 更新审批状态
-    db.query(`UPDATE coach_change_requests SET ${updateField} = ? WHERE id = ?`, [approve, requestId], (err) => {
-      if (err) return res.status(500).json({ error: '更新失败' });
-      
-      if (!approve) {
-        // 拒绝申请，直接设为rejected
-        db.query('UPDATE coach_change_requests SET status = "rejected" WHERE id = ?', [requestId], (err) => {
-          if (err) return res.status(500).json({ error: '更新失败' });
-          sendMessage(request.student_id, '教练更换申请被拒绝', `您的教练更换申请已被拒绝`);
-          res.json({ success: true });
-        });
-      } else {
-        // 检查是否三方都同意
-        db.query('SELECT * FROM coach_change_requests WHERE id = ?', [requestId], (err, updated) => {
+    if (!approve) {
+      // 拒绝申请
+      const sql = `UPDATE coach_change_request SET ${updateField} = ?, status = 'rejected' WHERE id = ?`;
+      db.query(sql, [response_text || '拒绝', requestId], (err) => {
+        if (err) return res.status(500).json({ error: '更新失败' });
+        
+        sendMessage(request.student_id, '教练更换申请被拒绝', `您的教练更换申请已被拒绝。原因：${response_text || '无'}`);
+        logAudit('coach_change_rejected', user_id, { request_id: requestId, reason: response_text });
+        res.json({ success: true });
+      });
+    } else {
+      // 同意申请
+      const sql = `UPDATE coach_change_request SET ${updateField} = ?, status = ? WHERE id = ?`;
+      db.query(sql, [response_text || '同意', newStatus, requestId], (err) => {
+        if (err) return res.status(500).json({ error: '更新失败' });
+        
+        // 检查是否所有相关方都已同意
+        db.query('SELECT * FROM coach_change_request WHERE id = ?', [requestId], (err, updated) => {
           if (err) return res.status(500).json({ error: '查询失败' });
           
           const req = updated[0];
-          if (req.current_coach_approved && req.new_coach_approved && req.admin_approved) {
-            // 三方都同意，执行更换
-            executeCoachChange(request.student_id, request.current_coach_id, request.new_coach_id, requestId, res);
+          // 如果当前教练、新教练和管理员都已同意，执行更换
+          if (req.status === 'current_coach_approved' && 
+              req.new_coach_response && req.new_coach_response !== '拒绝' &&
+              req.admin_response && req.admin_response !== '拒绝') {
+            executeCoachChange(req.student_id, req.current_coach_id, req.new_coach_id, requestId, res);
           } else {
             res.json({ success: true, message: '等待其他相关人员确认' });
           }
         });
-      }
-    });
+      });
+    }
   });
 });
 
@@ -2971,8 +3105,8 @@ function executeCoachChange(studentId, currentCoachId, newCoachId, requestId, re
     [newCoachId, studentId, currentCoachId], (err) => {
     if (err) return res.status(500).json({ error: '更换失败' });
     
-    // 更新申请状态
-    db.query('UPDATE coach_change_requests SET status = "approved" WHERE id = ?', [requestId], (err) => {
+    // 更新申请状态为已完成
+    db.query('UPDATE coach_change_request SET status = "admin_approved" WHERE id = ?', [requestId], (err) => {
       if (err) console.error('更新申请状态失败:', err);
       
       // 发送成功消息
@@ -2990,6 +3124,16 @@ function executeCoachChange(studentId, currentCoachId, newCoachId, requestId, re
 function isAdminForStudent(adminId, studentId) {
   // 这里应该实现检查逻辑，暂时返回true
   return true; // 简化实现
+}
+
+// 辅助函数：发送系统消息
+function sendMessage(recipientId, title, content) {
+  const sql = `INSERT INTO message (recipient_id, title, content, created_at) VALUES (?, ?, ?, NOW())`;
+  db.query(sql, [recipientId, title, content], (err, result) => {
+    if (err) {
+      console.error('发送消息失败:', err);
+    }
+  });
 }
 
 // 课程提醒功能
@@ -4208,7 +4352,6 @@ function sendClassReminders() {
     LEFT JOIN table_court tc ON r.table_id = tc.id
     WHERE r.status = 'confirmed' 
     AND r.start_time BETWEEN ? AND ?
-    AND r.reminded = 0
   `;
   
   db.query(sql, [now, oneHourLater], (err, reservations) => {
@@ -4224,18 +4367,24 @@ function sendClassReminders() {
       
       // 给学员发送提醒
       const studentMessage = `课程提醒：您预约的课程将于${timeStr}开始，教练：${reservation.coach_name}，${tableInfo}，请提前10分钟到达。`;
-      sendMessage(reservation.student_id, '课程提醒', studentMessage);
+      db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '课程提醒', ?)`, 
+        [reservation.student_id, studentMessage], (err) => {
+          if (err) console.error('发送学员提醒失败:', err);
+        });
       
       // 给教练发送提醒
       const coachMessage = `课程提醒：您的课程将于${timeStr}开始，学员：${reservation.student_name}，${tableInfo}，请提前5分钟到达。`;
-      sendMessage(reservation.coach_id, '课程提醒', coachMessage);
+      db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '课程提醒', ?)`, 
+        [reservation.coach_id, coachMessage], (err) => {
+          if (err) console.error('发送教练提醒失败:', err);
+        });
       
-      // 标记已提醒
-      db.query('UPDATE reservation SET reminded = 1 WHERE id = ?', [reservation.id], (updateErr) => {
-        if (updateErr) {
-          console.error('更新提醒状态失败:', updateErr);
-        }
-      });
+      // 标记已提醒 (暂时注释掉，避免字段不存在错误)
+      // db.query('UPDATE reservation SET reminded = 1 WHERE id = ?', [reservation.id], (updateErr) => {
+      //   if (updateErr) {
+      //     console.error('更新提醒状态失败:', updateErr);
+      //   }
+      // });
     });
     
     if (reservations.length > 0) {

@@ -22,6 +22,7 @@
         <div class="list-group">
           <a href="/coach_portal.html" class="list-group-item list-group-item-action active">工作台首页</a>
           <a href="#pendingStudents" class="list-group-item list-group-item-action" data-toggle="tab">学员申请</a>
+          <a href="#coachChangeRequests" class="list-group-item list-group-item-action" data-toggle="tab">更换申请</a>
           <a href="#mySchedule" class="list-group-item list-group-item-action" data-toggle="tab">我的课表</a>
           <a href="#reservationMgmt" class="list-group-item list-group-item-action" data-toggle="tab">预约管理</a>
           <a href="#studentList" class="list-group-item list-group-item-action" data-toggle="tab">学员列表</a>
@@ -114,6 +115,37 @@
                     </thead>
                     <tbody id="pendingStudentsList">
                       <tr><td colspan="7" class="text-center">加载中...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 更换申请管理 -->
+          <div class="tab-pane fade" id="coachChangeRequests">
+            <div class="card">
+              <div class="card-header">
+                <h5>教练更换申请</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadCoachChangeRequests()">刷新</button>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive">
+                  <table class="table table-striped">
+                    <thead>
+                      <tr>
+                        <th>申请ID</th>
+                        <th>学员姓名</th>
+                        <th>当前教练</th>
+                        <th>目标教练</th>
+                        <th>申请原因</th>
+                        <th>状态</th>
+                        <th>申请时间</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="coachChangeList">
+                      <tr><td colspan="8" class="text-center">加载中...</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -366,6 +398,91 @@
         alert('操作失败');
       }
     }
+
+    // 加载教练更换申请
+    async function loadCoachChangeRequests() {
+      try {
+        const res = await fetch(`/api/coach-change-requests?user_id=${coachData.id}&user_role=coach`);
+        const requests = await res.json();
+        
+        const tbody = document.getElementById('coachChangeList');
+        if (requests.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="text-center">暂无更换申请</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = requests.map(req => {
+          const statusMap = {
+            'pending': '待处理',
+            'current_coach_approved': '当前教练已同意',
+            'new_coach_approved': '新教练已同意',
+            'admin_approved': '管理员已审核',
+            'rejected': '已拒绝'
+          };
+          
+          const isCurrentCoach = req.current_coach_id === coachData.id;
+          const isNewCoach = req.new_coach_id === coachData.id;
+          const canRespond = req.status === 'pending' || 
+                            (req.status === 'current_coach_approved' && isNewCoach) ||
+                            (req.status === 'new_coach_approved' && isCurrentCoach);
+          
+          return `
+            <tr>
+              <td>${req.id}</td>
+              <td>${req.student_name}</td>
+              <td>${req.current_coach_name}</td>
+              <td>${req.new_coach_name}</td>
+              <td title="${req.reason}">${req.reason ? req.reason.substring(0, 20) + '...' : '无'}</td>
+              <td><span class="badge ${req.status === 'pending' ? 'badge-warning' : req.status === 'rejected' ? 'badge-danger' : 'badge-info'}">${statusMap[req.status] || req.status}</span></td>
+              <td>${new Date(req.created_at).toLocaleString()}</td>
+              <td>
+                ${canRespond ? `
+                  <button class="btn btn-sm btn-success" onclick="respondToChangeRequest(${req.id}, true, '${isCurrentCoach ? 'current' : 'new'}')">同意</button>
+                  <button class="btn btn-sm btn-danger ml-1" onclick="respondToChangeRequest(${req.id}, false, '${isCurrentCoach ? 'current' : 'new'}')">拒绝</button>
+                ` : '无需操作'}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('coachChangeList').innerHTML = '<tr><td colspan="8" class="text-center text-danger">加载失败</td></tr>';
+      }
+    }
+
+    // 响应更换申请
+    async function respondToChangeRequest(requestId, approve, coachType) {
+      const response = prompt(approve ? '请输入同意理由（可选）：' : '请输入拒绝原因：');
+      if (!approve && !response) {
+        alert('拒绝时必须填写原因');
+        return;
+      }
+      
+      try {
+        const res = await fetch(`/api/coach-change-request/${requestId}/respond`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: coachData.id,
+            user_type: coachType + '_coach',
+            approve: approve,
+            response_text: response || ''
+          })
+        });
+        
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          alert(data.error || '操作失败');
+          return;
+        }
+        
+        alert(approve ? '已同意更换申请' : '已拒绝更换申请');
+        loadCoachChangeRequests();
+      } catch (error) {
+        console.error('Error:', error);
+        alert('操作失败');
+      }
+    }
     
     async function loadSchedule() {
       const from = document.getElementById('scheduleFrom').value || new Date().toISOString().split('T')[0];
@@ -578,6 +695,9 @@
       switch(tabId) {
         case 'pendingStudents':
           loadPendingStudents();
+          break;
+        case 'coachChangeRequests':
+          loadCoachChangeRequests();
           break;
         case 'mySchedule':
           loadSchedule();

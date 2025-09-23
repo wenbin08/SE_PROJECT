@@ -24,6 +24,7 @@
           <a href="/admin_approve.html" class="list-group-item list-group-item-action">教练审核</a>
           <a href="/admin_users.html" class="list-group-item list-group-item-action">用户管理</a>
           <a href="/admin_reservations.html" class="list-group-item list-group-item-action">预约管理</a>
+          <a href="#coachChangeAdmin" class="list-group-item list-group-item-action" data-toggle="tab">更换申请</a>
           <a href="/admin_tournament.html" class="list-group-item list-group-item-action">月赛管理</a>
           <a href="/admin_finance.html" class="list-group-item list-group-item-action">财务管理</a>
           <a href="/admin_statistics.html" class="list-group-item list-group-item-action">统计报表</a>
@@ -102,6 +103,39 @@
                     </div>
                   </div>
                 </form>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 更换申请管理 -->
+        <div class="tab-pane fade" id="coachChangeAdmin" style="display: none;">
+          <div class="card">
+            <div class="card-header">
+              <h5>教练更换申请管理</h5>
+              <button class="btn btn-sm btn-outline-primary" onclick="loadCoachChangeRequestsAdmin()">刷新</button>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>申请ID</th>
+                      <th>学员姓名</th>
+                      <th>当前教练</th>
+                      <th>目标教练</th>
+                      <th>申请原因</th>
+                      <th>当前教练</th>
+                      <th>目标教练</th>
+                      <th>状态</th>
+                      <th>申请时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="coachChangeAdminList">
+                    <tr><td colspan="10" class="text-center">加载中...</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -289,6 +323,158 @@
       }
     });
     
+    // 加载教练更换申请（管理员）
+    async function loadCoachChangeRequestsAdmin() {
+      try {
+        const res = await fetch(`/api/coach-change-requests?user_id=${adminData.id}&user_role=campus_admin`);
+        const requests = await res.json();
+        
+        const tbody = document.getElementById('coachChangeAdminList');
+        if (requests.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="10" class="text-center">暂无更换申请</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = requests.map(req => {
+          const statusMap = {
+            'pending': '待处理',
+            'current_coach_approved': '当前教练已同意',
+            'new_coach_approved': '新教练已同意',
+            'admin_approved': '管理员已审核',
+            'rejected': '已拒绝'
+          };
+          
+          const canApprove = req.status === 'current_coach_approved' || req.status === 'new_coach_approved';
+          
+          return `
+            <tr>
+              <td>${req.id}</td>
+              <td>${req.student_name}</td>
+              <td>${req.current_coach_name}</td>
+              <td>${req.new_coach_name}</td>
+              <td title="${req.reason}">${req.reason ? req.reason.substring(0, 15) + '...' : '无'}</td>
+              <td><span class="badge ${req.current_coach_response ? 'badge-success' : 'badge-secondary'}">${req.current_coach_response ? '已响应' : '待响应'}</span></td>
+              <td><span class="badge ${req.new_coach_response ? 'badge-success' : 'badge-secondary'}">${req.new_coach_response ? '已响应' : '待响应'}</span></td>
+              <td><span class="badge ${req.status === 'pending' ? 'badge-warning' : req.status === 'rejected' ? 'badge-danger' : 'badge-info'}">${statusMap[req.status] || req.status}</span></td>
+              <td>${new Date(req.created_at).toLocaleString()}</td>
+              <td>
+                ${canApprove ? `
+                  <button class="btn btn-sm btn-success" onclick="adminApproveChangeRequest(${req.id}, true)">最终批准</button>
+                  <button class="btn btn-sm btn-danger ml-1" onclick="adminApproveChangeRequest(${req.id}, false)">拒绝</button>
+                ` : req.status === 'admin_approved' ? '已处理' : '等待教练响应'}
+                <button class="btn btn-sm btn-info ml-1" onclick="viewChangeRequestDetails(${req.id})">详情</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('coachChangeAdminList').innerHTML = '<tr><td colspan="10" class="text-center text-danger">加载失败</td></tr>';
+      }
+    }
+
+    // 管理员最终审核更换申请
+    async function adminApproveChangeRequest(requestId, approve) {
+      const response = prompt(approve ? '请输入批准理由（可选）：' : '请输入拒绝原因：');
+      if (!approve && !response) {
+        alert('拒绝时必须填写原因');
+        return;
+      }
+      
+      try {
+        const res = await fetch(`/api/coach-change-request/${requestId}/respond`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: adminData.id,
+            user_type: 'admin',
+            approve: approve,
+            response_text: response || ''
+          })
+        });
+        
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          alert(data.error || '操作失败');
+          return;
+        }
+        
+        alert(approve ? '已批准更换申请' : '已拒绝更换申请');
+        loadCoachChangeRequestsAdmin();
+      } catch (error) {
+        console.error('Error:', error);
+        alert('操作失败');
+      }
+    }
+
+    // 查看更换申请详情
+    async function viewChangeRequestDetails(requestId) {
+      try {
+        const res = await fetch(`/api/coach-change-requests?user_id=${adminData.id}&user_role=campus_admin`);
+        const requests = await res.json();
+        const req = requests.find(r => r.id === requestId);
+        
+        if (!req) {
+          alert('申请详情不存在');
+          return;
+        }
+        
+        const details = `
+申请详情：
+申请ID: ${req.id}
+学员: ${req.student_name}
+当前教练: ${req.current_coach_name}
+目标教练: ${req.new_coach_name}
+申请原因: ${req.reason || '无'}
+当前教练响应: ${req.current_coach_response || '无'}
+目标教练响应: ${req.new_coach_response || '无'}
+管理员响应: ${req.admin_response || '无'}
+申请时间: ${new Date(req.created_at).toLocaleString()}
+        `;
+        
+        alert(details);
+      } catch (error) {
+        alert('获取详情失败');
+      }
+    }
+    
+    // 初始化标签页切换
+    function initTabSwitching() {
+      const tabLinks = document.querySelectorAll('[data-toggle="tab"]');
+      tabLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+          e.preventDefault();
+          
+          // 隐藏所有标签页内容
+          document.querySelectorAll('.tab-pane').forEach(pane => {
+            pane.style.display = 'none';
+            pane.classList.remove('show', 'active');
+          });
+          
+          // 移除所有active类
+          document.querySelectorAll('.list-group-item-action').forEach(item => {
+            item.classList.remove('active');
+          });
+          
+          // 添加active类到当前链接
+          this.classList.add('active');
+          
+          // 显示对应的标签页内容
+          const targetId = this.getAttribute('href').substring(1);
+          const targetPane = document.getElementById(targetId);
+          if (targetPane) {
+            targetPane.style.display = 'block';
+            targetPane.classList.add('show', 'active');
+            
+            // 加载对应数据
+            if (targetId === 'coachChangeAdmin') {
+              loadCoachChangeRequestsAdmin();
+            }
+          }
+        });
+      });
+    }
+    
     function logout() {
       localStorage.removeItem('userData');
       window.location.href = '/';
@@ -304,6 +490,9 @@
       }
       
       document.getElementById('userInfo').textContent = `校区管理员：${adminData.real_name}`;
+      
+      // 初始化标签页切换
+      initTabSwitching();
       
       // 加载数据
       loadStatistics();
