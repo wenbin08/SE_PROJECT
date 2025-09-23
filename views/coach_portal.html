@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>教练工作台 - 乒乓球培训管理系统</title>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/teacher.css">
+</head>
+<body>
+  <div class="container-fluid">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
+      <a class="navbar-brand" href="#">乒乓球培训管理系统</a>
+      <div class="navbar-nav ml-auto">
+        <span class="navbar-text" id="userInfo">教练</span>
+        <a class="nav-link" href="/" onclick="logout()">退出</a>
+      </div>
+    </nav>
+
+    <div class="row mt-3">
+      <div class="col-md-3">
+        <div class="list-group">
+          <a href="/coach_portal.html" class="list-group-item list-group-item-action active">工作台首页</a>
+          <a href="#pendingStudents" class="list-group-item list-group-item-action" data-toggle="tab">学员申请</a>
+          <a href="#mySchedule" class="list-group-item list-group-item-action" data-toggle="tab">我的课表</a>
+          <a href="#reservationMgmt" class="list-group-item list-group-item-action" data-toggle="tab">预约管理</a>
+          <a href="#studentList" class="list-group-item list-group-item-action" data-toggle="tab">学员列表</a>
+          <a href="#reviewMgmt" class="list-group-item list-group-item-action" data-toggle="tab">课后评价</a>
+          <a href="/messages.html" class="list-group-item list-group-item-action">系统消息</a>
+        </div>
+      </div>
+      
+      <div class="col-md-9">
+        <div class="tab-content">
+          <!-- 工作台首页 -->
+          <div class="tab-pane fade show active" id="dashboard">
+            <!-- 统计卡片 -->
+            <div class="row mb-4">
+              <div class="col-md-3">
+                <div class="card text-white bg-primary">
+                  <div class="card-body">
+                    <h5 class="card-title">我的学员</h5>
+                    <h2 id="studentCount">-</h2>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card text-white bg-warning">
+                  <div class="card-body">
+                    <h5 class="card-title">待审核申请</h5>
+                    <h2 id="pendingApplications">-</h2>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card text-white bg-info">
+                  <div class="card-body">
+                    <h5 class="card-title">今日预约</h5>
+                    <h2 id="todayReservations">-</h2>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card text-white bg-success">
+                  <div class="card-body">
+                    <h5 class="card-title">本月收入</h5>
+                    <h2 id="monthlyIncome">-</h2>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 今日课表 -->
+            <div class="card mb-4">
+              <div class="card-header">
+                <h5>今日课表</h5>
+              </div>
+              <div class="card-body">
+                <div id="todaySchedule">加载中...</div>
+              </div>
+            </div>
+
+            <!-- 最新消息 -->
+            <div class="card">
+              <div class="card-header">
+                <h5>最新消息</h5>
+              </div>
+              <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                <div id="recentMessages">加载中...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 学员申请审核 -->
+          <div class="tab-pane fade" id="pendingStudents">
+            <div class="card">
+              <div class="card-header">
+                <h5>待审核学员申请</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadPendingStudents()">刷新</button>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive">
+                  <table class="table table-striped">
+                    <thead>
+                      <tr>
+                        <th>学员姓名</th>
+                        <th>性别</th>
+                        <th>年龄</th>
+                        <th>电话</th>
+                        <th>邮箱</th>
+                        <th>申请时间</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="pendingStudentsList">
+                      <tr><td colspan="7" class="text-center">加载中...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 我的课表 -->
+          <div class="tab-pane fade" id="mySchedule">
+            <div class="card">
+              <div class="card-header">
+                <h5>我的课表</h5>
+                <div class="form-row">
+                  <div class="col-auto">
+                    <label>开始日期</label>
+                    <input type="date" class="form-control form-control-sm" id="scheduleFrom">
+                  </div>
+                  <div class="col-auto">
+                    <label>结束日期</label>
+                    <input type="date" class="form-control form-control-sm" id="scheduleTo">
+                  </div>
+                  <div class="col-auto">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary btn-sm form-control" onclick="loadSchedule()">查询</button>
+                  </div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive">
+                  <table class="table table-striped">
+                    <thead>
+                      <tr>
+                        <th>预约ID</th>
+                        <th>学员</th>
+                        <th>开始时间</th>
+                        <th>结束时间</th>
+                        <th>球台</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="scheduleList">
+                      <tr><td colspan="7" class="text-center">请选择日期范围查询</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 预约管理 -->
+          <div class="tab-pane fade" id="reservationMgmt">
+            <div class="card">
+              <div class="card-header">
+                <h5>预约管理</h5>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive">
+                  <table class="table table-striped">
+                    <thead>
+                      <tr>
+                        <th>预约ID</th>
+                        <th>学员</th>
+                        <th>时间</th>
+                        <th>球台</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="reservationList">
+                      <tr><td colspan="6" class="text-center">加载中...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 学员列表 -->
+          <div class="tab-pane fade" id="studentList">
+            <div class="card">
+              <div class="card-header">
+                <h5>我的学员</h5>
+              </div>
+              <div class="card-body">
+                <div id="myStudents">加载中...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 课后评价 -->
+          <div class="tab-pane fade" id="reviewMgmt">
+            <div class="card">
+              <div class="card-header">
+                <h5>课后评价管理</h5>
+              </div>
+              <div class="card-body">
+                <div id="reviewList">加载中...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  <script>
+    let coachData = {};
+    
+    async function loadDashboard() {
+      // 加载统计数据
+      try {
+        // 学员数量
+        const studentsRes = await fetch(`/api/coach/approved-students?coach_id=${coachData.id}`);
+        const approvedStudents = await studentsRes.json();
+        document.getElementById('studentCount').textContent = approvedStudents.length;
+        
+        // 待审核申请数量
+        const pendingRes = await fetch(`/api/coach/select/pending?coach_id=${coachData.id}`);
+        const pendingStudents = await pendingRes.json();
+        document.getElementById('pendingApplications').textContent = pendingStudents.length;
+        
+        // 今日预约
+        const today = new Date().toISOString().split('T')[0];
+        const reservationsRes = await fetch(`/api/reservations?coach_id=${coachData.id}&from=${today} 00:00:00&to=${today} 23:59:59`);
+        const todayRes = await reservationsRes.json();
+        document.getElementById('todayReservations').textContent = todayRes.length;
+        
+        // 加载今日课表
+        loadTodaySchedule();
+        loadRecentMessages();
+      } catch (error) {
+        console.error('加载数据失败:', error);
+      }
+    }
+    
+    async function loadTodaySchedule() {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const res = await fetch(`/api/reservations?coach_id=${coachData.id}&from=${today} 00:00:00&to=${today} 23:59:59&status=confirmed`);
+        const reservations = await res.json();
+        
+        const container = document.getElementById('todaySchedule');
+        if (reservations.length === 0) {
+          container.innerHTML = '<p class="text-muted">今日无预约课程</p>';
+        } else {
+          container.innerHTML = reservations.map(res => `
+            <div class="border rounded p-3 mb-2">
+              <div class="row">
+                <div class="col-md-8">
+                  <h6>${res.student_name}</h6>
+                  <p class="mb-1">${new Date(res.start_time).toLocaleTimeString()} - ${new Date(res.end_time).toLocaleTimeString()}</p>
+                  <p class="mb-0 text-muted">球台：${res.table_code}</p>
+                </div>
+                <div class="col-md-4 text-right">
+                  <span class="badge badge-success">已确认</span>
+                </div>
+              </div>
+            </div>
+          `).join('');
+        }
+      } catch (error) {
+        document.getElementById('todaySchedule').innerHTML = '<p class="text-danger">加载失败</p>';
+      }
+    }
+    
+    async function loadRecentMessages() {
+      try {
+        const res = await fetch(`/api/messages?recipient_id=${coachData.id}`);
+        const messages = await res.json();
+        
+        const messageHtml = messages.slice(0, 5).map(msg => `
+          <div class="border-bottom pb-2 mb-2">
+            <div class="d-flex justify-content-between">
+              <strong>${msg.title}</strong>
+              <small class="text-muted">${new Date(msg.created_at).toLocaleDateString()}</small>
+            </div>
+            <p class="mb-0">${msg.content}</p>
+          </div>
+        `).join('') || '<p class="text-muted">暂无消息</p>';
+        
+        document.getElementById('recentMessages').innerHTML = messageHtml;
+      } catch (error) {
+        document.getElementById('recentMessages').innerHTML = '<p class="text-danger">加载失败</p>';
+      }
+    }
+    
+    async function loadPendingStudents() {
+      try {
+        const res = await fetch(`/api/coach/select/pending?coach_id=${coachData.id}`);
+        const students = await res.json();
+        
+        const tbody = document.getElementById('pendingStudentsList');
+        if (students.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="text-center">暂无待审核申请</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = students.map(student => `
+          <tr>
+            <td>${student.real_name}</td>
+            <td>${student.gender}</td>
+            <td>${student.age || '-'}</td>
+            <td>${student.phone}</td>
+            <td>${student.email || '-'}</td>
+            <td>${new Date(student.created_at).toLocaleDateString()}</td>
+            <td>
+              <button class="btn btn-sm btn-success" onclick="approveStudent(${student.id}, true)">通过</button>
+              <button class="btn btn-sm btn-danger" onclick="approveStudent(${student.id}, false)">拒绝</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        document.getElementById('pendingStudentsList').innerHTML = '<tr><td colspan="7" class="text-center text-danger">加载失败</td></tr>';
+      }
+    }
+    
+    async function approveStudent(studentId, approve) {
+      try {
+        const res = await fetch('/api/coach/select/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            coach_id: coachData.id,
+            student_id: studentId,
+            approve: approve
+          })
+        });
+        
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          alert(data.error || '操作失败');
+          return;
+        }
+        
+        alert(approve ? '已通过申请' : '已拒绝申请');
+        loadPendingStudents();
+        loadDashboard();
+      } catch (error) {
+        alert('操作失败');
+      }
+    }
+    
+    async function loadSchedule() {
+      const from = document.getElementById('scheduleFrom').value || new Date().toISOString().split('T')[0];
+      const to = document.getElementById('scheduleTo').value || new Date(Date.now() + 7*24*3600*1000).toISOString().split('T')[0];
+      
+      try {
+        const res = await fetch(`/api/reservations?coach_id=${coachData.id}&from=${from} 00:00:00&to=${to} 23:59:59`);
+        const reservations = await res.json();
+        
+        const tbody = document.getElementById('scheduleList');
+        if (reservations.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="text-center">该时间段无预约</td></tr>';
+          return;
+        }
+        
+        tbody.innerHTML = reservations.map(res => `
+          <tr>
+            <td>${res.id}</td>
+            <td>${res.student_name}</td>
+            <td>${new Date(res.start_time).toLocaleString()}</td>
+            <td>${new Date(res.end_time).toLocaleString()}</td>
+            <td>${res.table_code}</td>
+            <td>${getStatusBadge(res.status)}</td>
+            <td>${getActionButtons(res)}</td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        document.getElementById('scheduleList').innerHTML = '<tr><td colspan="7" class="text-center text-danger">加载失败</td></tr>';
+      }
+    }
+    
+    function getStatusBadge(status) {
+      const badges = {
+        'pending': '<span class="badge badge-warning">待确认</span>',
+        'confirmed': '<span class="badge badge-success">已确认</span>',
+        'rejected': '<span class="badge badge-danger">已拒绝</span>',
+        'canceled': '<span class="badge badge-secondary">已取消</span>',
+        'completed': '<span class="badge badge-info">已完成</span>'
+      };
+      return badges[status] || status;
+    }
+    
+    function getActionButtons(reservation) {
+      if (reservation.status === 'pending') {
+        return `
+          <button class="btn btn-sm btn-success" onclick="confirmReservation(${reservation.id})">确认</button>
+          <button class="btn btn-sm btn-danger" onclick="rejectReservation(${reservation.id})">拒绝</button>
+        `;
+      } else if (reservation.status === 'confirmed') {
+        const now = new Date();
+        const startTime = new Date(reservation.start_time);
+        const timeDiff = startTime - now;
+        
+        if (timeDiff > 24 * 3600 * 1000) { // 24小时以上
+          return `<button class="btn btn-sm btn-warning" onclick="cancelReservation(${reservation.id})">取消</button>`;
+        }
+      }
+      return '-';
+    }
+    
+    async function confirmReservation(id) {
+      try {
+        const res = await fetch(`/api/reservations/${id}/confirm`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          alert(data.error || '确认失败');
+          return;
+        }
+        
+        alert(`预约已确认，学员已扣费 ￥${data.fee || 0}`);
+        loadSchedule();
+        loadDashboard();
+      } catch (error) {
+        alert('确认失败');
+      }
+    }
+    
+    async function rejectReservation(id) {
+      try {
+        const res = await fetch(`/api/reservations/${id}/reject`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          alert(data.error || '拒绝失败');
+          return;
+        }
+        
+        alert('预约已拒绝');
+        loadSchedule();
+        loadDashboard();
+      } catch (error) {
+        alert('拒绝失败');
+      }
+    }
+    
+    async function cancelReservation(id) {
+      try {
+        const res = await fetch(`/api/reservations/${id}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ by: 'coach' })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          alert(data.error || '取消失败');
+          return;
+        }
+        
+        if (data.pending_confirm) {
+          alert('取消申请已提交，等待学员确认');
+        } else {
+          alert('预约已取消');
+        }
+        
+        loadSchedule();
+      } catch (error) {
+        alert('取消失败');
+      }
+    }
+    
+    function logout() {
+      localStorage.removeItem('userData');
+      window.location.href = '/';
+    }
+    
+    // 页面加载时检查登录状态
+    window.onload = function() {
+      coachData = JSON.parse(localStorage.getItem('userData') || '{}');
+      if (!coachData.id || coachData.role !== 'coach') {
+        alert('请先登录');
+        window.location.href = '/';
+        return;
+      }
+      
+      document.getElementById('userInfo').textContent = `教练：${coachData.real_name}`;
+      
+      // 设置默认日期
+      const today = new Date().toISOString().split('T')[0];
+      const nextWeek = new Date(Date.now() + 7*24*3600*1000).toISOString().split('T')[0];
+      if (document.getElementById('scheduleFrom')) {
+        document.getElementById('scheduleFrom').value = today;
+        document.getElementById('scheduleTo').value = nextWeek;
+      }
+      
+      // 加载数据
+      loadDashboard();
+      loadPendingStudents();
+      
+      // 初始化tab切换功能
+      initializeTabs();
+    };
+    
+    // 初始化tab切换功能
+    function initializeTabs() {
+      // 获取所有tab链接
+      const tabLinks = document.querySelectorAll('[data-toggle="tab"]');
+      
+      tabLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+          e.preventDefault();
+          
+          // 移除所有active类
+          document.querySelectorAll('.list-group-item-action').forEach(item => {
+            item.classList.remove('active');
+          });
+          document.querySelectorAll('.tab-pane').forEach(pane => {
+            pane.classList.remove('show', 'active');
+          });
+          
+          // 添加active类到当前链接
+          this.classList.add('active');
+          
+          // 显示对应的tab内容
+          const targetId = this.getAttribute('href').substring(1);
+          const targetPane = document.getElementById(targetId);
+          if (targetPane) {
+            targetPane.classList.add('show', 'active');
+            
+            // 根据不同tab加载对应数据
+            loadTabData(targetId);
+          }
+        });
+      });
+    }
+    
+    // 根据tab加载对应数据
+    function loadTabData(tabId) {
+      switch(tabId) {
+        case 'pendingStudents':
+          loadPendingStudents();
+          break;
+        case 'mySchedule':
+          loadSchedule();
+          break;
+        case 'reservationMgmt':
+          loadReservations();
+          break;
+        case 'studentList':
+          loadMyStudents();
+          break;
+        case 'reviewMgmt':
+          loadReviews();
+          break;
+      }
+    }
+    
+    // 加载待审核学员
+    async function loadPendingStudents() {
+      try {
+        const res = await fetch(`/api/coach/select/pending?coach_id=${coachData.id}`);
+        const students = await res.json();
+        
+        const container = document.getElementById('pendingStudentsList');
+        if (!container) return;
+        
+        if (students.length === 0) {
+          container.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无待审核申请</td></tr>';
+        } else {
+          container.innerHTML = students.map(student => `
+            <tr>
+              <td>${student.real_name}</td>
+              <td>${student.gender}</td>
+              <td>${student.age || '-'}</td>
+              <td>${student.phone}</td>
+              <td>${student.email || '-'}</td>
+              <td>${new Date(student.created_at || Date.now()).toLocaleDateString()}</td>
+              <td>
+                <button class="btn btn-sm btn-success" onclick="approveStudent(${student.id}, true)">通过</button>
+                <button class="btn btn-sm btn-danger ml-1" onclick="approveStudent(${student.id}, false)">拒绝</button>
+              </td>
+            </tr>
+          `).join('');
+        }
+      } catch (error) {
+        console.error('加载待审核学员失败:', error);
+        const container = document.getElementById('pendingStudentsList');
+        if (container) container.innerHTML = '<tr><td colspan="7" class="text-center text-danger">加载失败</td></tr>';
+      }
+    }
+    
+    // 审核学员申请
+    async function approveStudent(studentId, approve) {
+      try {
+        const res = await fetch('/api/coach/select/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            coach_id: coachData.id,
+            student_id: studentId,
+            approve: approve
+          })
+        });
+        
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          alert(data.error || '操作失败');
+          return;
+        }
+        
+        alert(approve ? '已通过申请' : '已拒绝申请');
+        loadPendingStudents();
+        loadDashboard();
+        if (approve) {
+          loadMyStudents(); // 同意申请后刷新学员列表
+        }
+      } catch (error) {
+        alert('操作失败');
+      }
+    }
+    
+    // 加载我的学员
+    async function loadMyStudents() {
+      try {
+        const res = await fetch(`/api/coach/approved-students?coach_id=${coachData.id}`);
+        const students = await res.json();
+        
+        const container = document.getElementById('myStudents');
+        if (!container) return;
+        
+        if (students.length === 0) {
+          container.innerHTML = '<p class="text-center text-muted">暂无学员</p>';
+        } else {
+          container.innerHTML = `
+            <table class="table table-striped">
+              <thead>
+                <tr>
+                  <th>姓名</th>
+                  <th>性别</th>
+                  <th>年龄</th>
+                  <th>电话</th>
+                  <th>邮箱</th>
+                  <th>加入时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${students.map(student => `
+                  <tr>
+                    <td>${student.real_name}</td>
+                    <td>${student.gender}</td>
+                    <td>${student.age || '-'}</td>
+                    <td>${student.phone}</td>
+                    <td>${student.email || '-'}</td>
+                    <td>${new Date(student.created_at || Date.now()).toLocaleDateString()}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        }
+      } catch (error) {
+        console.error('加载学员失败:', error);
+        const container = document.getElementById('myStudents');
+        if (container) container.innerHTML = '<p class="text-center text-danger">加载失败</p>';
+      }
+    }
+    
+    // 其他辅助函数
+    function getStatusColor(status) {
+      const colors = {
+        'pending': 'warning',
+        'confirmed': 'success', 
+        'completed': 'info',
+        'cancelled': 'danger'
+      };
+      return colors[status] || 'secondary';
+    }
+    
+    function getStatusText(status) {
+      const texts = {
+        'pending': '待确认',
+        'confirmed': '已确认',
+        'completed': '已完成',
+        'cancelled': '已取消'
+      };
+      return texts[status] || status;
+    }
+  </script>
+
+  <!-- Bootstrap JS -->
+  <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

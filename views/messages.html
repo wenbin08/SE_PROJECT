@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>消息中心 - 乒乓球培训管理系统</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+  <style>
+    .message-item {
+      border-left: 4px solid #dee2e6;
+      transition: all 0.3s ease;
+    }
+    .message-item.unread {
+      border-left-color: #007bff;
+      background-color: #f8f9ff;
+    }
+    .message-item:hover {
+      background-color: #f8f9fa;
+    }
+    .message-header {
+      display: flex;
+      justify-content: between;
+      align-items: center;
+    }
+    .message-time {
+      font-size: 0.8rem;
+      color: #6c757d;
+    }
+    .message-content {
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+    .unread-count {
+      background-color: #dc3545;
+      color: white;
+      border-radius: 10px;
+      padding: 2px 8px;
+      font-size: 0.8rem;
+    }
+    .message-type-badge {
+      font-size: 0.7rem;
+    }
+    .filter-tabs {
+      border-bottom: 1px solid #dee2e6;
+      margin-bottom: 20px;
+    }
+    .filter-tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.3s ease;
+    }
+    .filter-tab:hover {
+      background-color: #f8f9fa;
+    }
+    .filter-tab.active {
+      border-bottom-color: #007bff;
+      color: #007bff;
+      font-weight: bold;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #6c757d;
+    }
+    .empty-state i {
+      font-size: 4rem;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container">
+      <a class="navbar-brand" href="#">
+        <i class="bi bi-chat-dots"></i> 消息中心
+      </a>
+      <div class="navbar-nav ml-auto">
+        <span class="navbar-text mr-3" id="userInfo">
+          用户: <span id="userName">-</span>
+        </span>
+        <a class="nav-link text-light" href="/index.html">
+          <i class="bi bi-house"></i> 返回首页
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container mt-4">
+    <div class="row">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">
+            <div class="d-flex justify-content-between align-items-center">
+              <h5 class="mb-0">
+                <i class="bi bi-envelope"></i> 我的消息
+                <span class="unread-count ml-2" id="unreadCount" style="display: none;">0</span>
+              </h5>
+              <div>
+                <button class="btn btn-outline-primary btn-sm mr-2" onclick="refreshMessages()">
+                  <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="markAllRead()" id="markAllBtn" style="display: none;">
+                  <i class="bi bi-check-all"></i> 全部标记已读
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 过滤标签 -->
+          <div class="filter-tabs">
+            <div class="d-flex">
+              <div class="filter-tab active" data-filter="all" onclick="setFilter('all')">
+                全部消息
+              </div>
+              <div class="filter-tab" data-filter="unread" onclick="setFilter('unread')">
+                未读消息
+              </div>
+              <div class="filter-tab" data-filter="system" onclick="setFilter('system')">
+                系统通知
+              </div>
+              <div class="filter-tab" data-filter="reservation" onclick="setFilter('reservation')">
+                预约相关
+              </div>
+              <div class="filter-tab" data-filter="payment" onclick="setFilter('payment')">
+                支付相关
+              </div>
+            </div>
+          </div>
+
+          <div class="card-body p-0">
+            <div id="messagesList">
+              <div class="text-center p-4">
+                <i class="bi bi-arrow-clockwise spin"></i> 加载中...
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 消息详情模态框 -->
+  <div class="modal fade" id="messageModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="messageModalTitle">消息详情</h5>
+          <button type="button" class="close" data-dismiss="modal">
+            <span>&times;</span>
+          </button>
+        </div>
+        <div class="modal-body" id="messageModalBody">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+          <button type="button" class="btn btn-primary" id="markReadBtn" onclick="markAsRead()" style="display: none;">
+            标记已读
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let currentUser = null;
+    let currentFilter = 'all';
+    let allMessages = [];
+    let currentMessageId = null;
+
+    // 检查用户认证
+    function checkAuth() {
+      const userData = localStorage.getItem('userData');
+      if (!userData) {
+        alert('请先登录');
+        window.location.href = '/index.html';
+        return false;
+      }
+      
+      currentUser = JSON.parse(userData);
+      document.getElementById('userName').textContent = currentUser.real_name || currentUser.username;
+      return true;
+    }
+
+    // 加载消息列表
+    async function loadMessages() {
+      if (!currentUser) return;
+
+      try {
+        const res = await fetch(`/api/messages?recipient_id=${currentUser.id}`);
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.error || '加载失败');
+        }
+
+        allMessages = data.messages || [];
+        renderMessages();
+        updateUnreadCount();
+        
+      } catch (error) {
+        console.error('加载消息失败:', error);
+        document.getElementById('messagesList').innerHTML = 
+          '<div class="alert alert-danger m-3">加载消息失败: ' + error.message + '</div>';
+      }
+    }
+
+    // 渲染消息列表
+    function renderMessages() {
+      const container = document.getElementById('messagesList');
+      let filteredMessages = allMessages;
+
+      // 根据过滤器筛选消息
+      if (currentFilter === 'unread') {
+        filteredMessages = allMessages.filter(msg => !msg.is_read);
+      } else if (currentFilter !== 'all') {
+        filteredMessages = allMessages.filter(msg => 
+          msg.title.toLowerCase().includes(currentFilter) || 
+          msg.content.toLowerCase().includes(currentFilter)
+        );
+      }
+
+      if (filteredMessages.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <h5>暂无消息</h5>
+            <p>当前筛选条件下没有找到任何消息</p>
+          </div>
+        `;
+        return;
+      }
+
+      const html = filteredMessages.map(message => {
+        const isUnread = !message.is_read;
+        const messageType = getMessageType(message.title, message.content);
+        
+        return `
+          <div class="message-item p-3 border-bottom ${isUnread ? 'unread' : ''}" onclick="showMessageDetail(${message.id})">
+            <div class="message-header">
+              <div class="d-flex align-items-center">
+                ${isUnread ? '<i class="bi bi-circle-fill text-primary mr-2" style="font-size: 0.5rem;"></i>' : 
+                           '<i class="bi bi-check-circle text-success mr-2"></i>'}
+                <strong>${message.title}</strong>
+                <span class="badge badge-${messageType.color} message-type-badge ml-2">${messageType.text}</span>
+              </div>
+              <div class="message-time">${new Date(message.created_at).toLocaleString()}</div>
+            </div>
+            <div class="message-content">
+              ${message.content.length > 100 ? message.content.substring(0, 100) + '...' : message.content}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.innerHTML = html;
+    }
+
+    // 获取消息类型
+    function getMessageType(title, content) {
+      const titleLower = title.toLowerCase();
+      const contentLower = content.toLowerCase();
+      
+      if (titleLower.includes('预约') || titleLower.includes('课程')) {
+        return { color: 'primary', text: '预约' };
+      } else if (titleLower.includes('支付') || titleLower.includes('充值') || titleLower.includes('扣费')) {
+        return { color: 'success', text: '支付' };
+      } else if (titleLower.includes('审核') || titleLower.includes('申请')) {
+        return { color: 'warning', text: '审核' };
+      } else if (titleLower.includes('系统') || titleLower.includes('通知')) {
+        return { color: 'info', text: '系统' };
+      }
+      return { color: 'secondary', text: '其他' };
+    }
+
+    // 显示消息详情
+    function showMessageDetail(messageId) {
+      const message = allMessages.find(msg => msg.id === messageId);
+      if (!message) return;
+
+      currentMessageId = messageId;
+      document.getElementById('messageModalTitle').textContent = message.title;
+      
+      const modalBody = document.getElementById('messageModalBody');
+      modalBody.innerHTML = `
+        <div class="mb-3">
+          <div class="row">
+            <div class="col-sm-3"><strong>消息标题:</strong></div>
+            <div class="col-sm-9">${message.title}</div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <div class="row">
+            <div class="col-sm-3"><strong>发送时间:</strong></div>
+            <div class="col-sm-9">${new Date(message.created_at).toLocaleString()}</div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <div class="row">
+            <div class="col-sm-3"><strong>阅读状态:</strong></div>
+            <div class="col-sm-9">
+              ${message.is_read ? 
+                '<span class="badge badge-success">已读</span>' : 
+                '<span class="badge badge-warning">未读</span>'}
+            </div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <div class="row">
+            <div class="col-sm-3"><strong>消息内容:</strong></div>
+            <div class="col-sm-9">${message.content}</div>
+          </div>
+        </div>
+      `;
+
+      // 显示/隐藏标记已读按钮
+      const markReadBtn = document.getElementById('markReadBtn');
+      if (message.is_read) {
+        markReadBtn.style.display = 'none';
+      } else {
+        markReadBtn.style.display = 'inline-block';
+      }
+
+      $('#messageModal').modal('show');
+    }
+
+    // 标记单条消息为已读
+    async function markAsRead() {
+      if (!currentMessageId) return;
+
+      try {
+        const res = await fetch(`/api/messages/${currentMessageId}/read`, {
+          method: 'POST'
+        });
+
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.error || '操作失败');
+        }
+
+        // 更新本地数据
+        const message = allMessages.find(msg => msg.id === currentMessageId);
+        if (message) {
+          message.is_read = true;
+        }
+
+        $('#messageModal').modal('hide');
+        renderMessages();
+        updateUnreadCount();
+        
+      } catch (error) {
+        alert('标记已读失败: ' + error.message);
+      }
+    }
+
+    // 标记所有消息为已读
+    async function markAllRead() {
+      if (!currentUser) return;
+
+      const unreadMessages = allMessages.filter(msg => !msg.is_read);
+      if (unreadMessages.length === 0) {
+        alert('没有未读消息');
+        return;
+      }
+
+      if (!confirm(`确定要将所有 ${unreadMessages.length} 条未读消息标记为已读吗？`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/messages/mark-all-read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipient_id: currentUser.id })
+        });
+
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.error || '操作失败');
+        }
+
+        // 更新本地数据
+        allMessages.forEach(msg => {
+          msg.is_read = true;
+        });
+
+        renderMessages();
+        updateUnreadCount();
+        alert('所有消息已标记为已读');
+        
+      } catch (error) {
+        alert('操作失败: ' + error.message);
+      }
+    }
+
+    // 更新未读消息计数
+    function updateUnreadCount() {
+      const unreadCount = allMessages.filter(msg => !msg.is_read).length;
+      const countElement = document.getElementById('unreadCount');
+      const markAllBtn = document.getElementById('markAllBtn');
+      
+      if (unreadCount > 0) {
+        countElement.textContent = unreadCount;
+        countElement.style.display = 'inline-block';
+        markAllBtn.style.display = 'inline-block';
+      } else {
+        countElement.style.display = 'none';
+        markAllBtn.style.display = 'none';
+      }
+    }
+
+    // 设置过滤器
+    function setFilter(filter) {
+      currentFilter = filter;
+      
+      // 更新标签样式
+      document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.classList.remove('active');
+      });
+      document.querySelector(`[data-filter="${filter}"]`).classList.add('active');
+      
+      // 重新渲染消息
+      renderMessages();
+    }
+
+    // 刷新消息
+    function refreshMessages() {
+      loadMessages();
+    }
+
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+      if (checkAuth()) {
+        loadMessages();
+        
+        // 每30秒自动刷新一次
+        setInterval(loadMessages, 30000);
+      }
+    });
+  </script>
+</body>
+</html>

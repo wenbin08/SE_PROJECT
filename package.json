@@ -1,0 +1,20 @@
+{
+  "name": "new-se-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "软件工程课程设计——仿照 old_project 的选课系统骨架",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "extract:pdf": "node scripts/extract_pdf.js",
+    "db:init": "mysql -uroot -p%DB_PASS% < db/schema.sql & mysql -uroot -p%DB_PASS% < db/seed.sql"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "body-parser": "^1.20.3",
+    "express": "^4.21.2",
+    "mysql": "^2.18.1",
+    "pdf-parse": "^1.1.1"
+  }
+}

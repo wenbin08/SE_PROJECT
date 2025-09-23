@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>教师门户 - 教学管理系统</title>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/teacher.css">
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-info">
+    <a class="navbar-brand" href="#">教师门户</a>
+    <div class="collapse navbar-collapse">
+      <ul class="navbar-nav mr-auto">
+        <li class="nav-item"><a class="nav-link" href="#courses">授课管理</a></li>
+        <li class="nav-item"><a class="nav-link" href="#grading">成绩管理</a></li>
+        <li class="nav-item"><a class="nav-link" href="/tournament.html" target="_blank">月赛管理</a></li>
+      </ul>
+      <span class="navbar-text">欢迎，<span id="teacherName"></span> | <a href="/" class="text-light" onclick="logout()">退出登录</a></span>
+    </div>
+  </nav>
+
+  <div class="container mt-4">
+    <div class="card mb-4" id="courses">
+      <div class="card-header">授课课程</div>
+      <div class="card-body">
+        <table class="table table-hover">
+          <thead><tr><th>课程编号</th><th>课程名称</th><th>学分</th><th>选课人数</th></tr></thead>
+          <tbody id="teachingCourses"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mb-4" id="grading">
+      <div class="card-header">成绩管理</div>
+      <div class="card-body">
+        <div class="row mb-3"><div class="col-md-4"><select class="form-control" id="courseSelect"></select></div></div>
+        <table class="table table-bordered">
+          <thead><tr><th>学号</th><th>姓名</th><th>成绩</th><th>操作</th></tr></thead>
+          <tbody id="gradeList"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/teacher.js"></script>
+</body>
+</html>

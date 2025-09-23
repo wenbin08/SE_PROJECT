@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>支付管理 - 乒乓球培训管理系统</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+  <style>
+    .stats-card {
+      border-left: 4px solid #007bff;
+    }
+    .transaction-table {
+      font-size: 0.9rem;
+    }
+    .payment-method-badge {
+      font-size: 0.8rem;
+    }
+    .amount-positive {
+      color: #28a745;
+      font-weight: bold;
+    }
+    .amount-negative {
+      color: #dc3545;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/admin.html">
+        <i class="bi bi-trophy"></i> 乒乓球培训系统 - 支付管理
+      </a>
+      <div class="navbar-nav ml-auto">
+        <a class="nav-link" href="/admin.html">
+          <i class="bi bi-arrow-left"></i> 返回管理后台
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid mt-4">
+    <!-- 统计概览 -->
+    <div class="row mb-4">
+      <div class="col-md-3">
+        <div class="card stats-card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between">
+              <div>
+                <h6 class="card-title text-muted">今日收入</h6>
+                <h4 class="text-primary" id="todayIncome">￥0</h4>
+              </div>
+              <i class="bi bi-calendar-day text-primary" style="font-size: 2rem;"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card stats-card" style="border-left-color: #28a745;">
+          <div class="card-body">
+            <div class="d-flex justify-content-between">
+              <div>
+                <h6 class="card-title text-muted">本月收入</h6>
+                <h4 class="text-success" id="monthIncome">￥0</h4>
+              </div>
+              <i class="bi bi-calendar-month text-success" style="font-size: 2rem;"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card stats-card" style="border-left-color: #ffc107;">
+          <div class="card-body">
+            <div class="d-flex justify-content-between">
+              <div>
+                <h6 class="card-title text-muted">总充值金额</h6>
+                <h4 class="text-warning" id="totalRecharge">￥0</h4>
+              </div>
+              <i class="bi bi-wallet2 text-warning" style="font-size: 2rem;"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card stats-card" style="border-left-color: #17a2b8;">
+          <div class="card-body">
+            <div class="d-flex justify-content-between">
+              <div>
+                <h6 class="card-title text-muted">课程收入</h6>
+                <h4 class="text-info" id="courseIncome">￥0</h4>
+              </div>
+              <i class="bi bi-graph-up text-info" style="font-size: 2rem;"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 查询过滤器 -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-funnel"></i> 查询过滤</h5>
+      </div>
+      <div class="card-body">
+        <form class="row g-3">
+          <div class="col-md-2">
+            <label class="form-label">用户ID</label>
+            <input type="number" class="form-control" id="filterUserId" placeholder="用户ID">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">交易类型</label>
+            <select class="form-control" id="filterType">
+              <option value="">全部</option>
+              <option value="recharge">充值</option>
+              <option value="reservation_fee">课程费用</option>
+              <option value="refund">退款</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">支付方式</label>
+            <select class="form-control" id="filterMethod">
+              <option value="">全部</option>
+              <option value="wechat">微信支付</option>
+              <option value="alipay">支付宝</option>
+              <option value="offline">线下支付</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">开始日期</label>
+            <input type="date" class="form-control" id="filterStartDate">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">结束日期</label>
+            <input type="date" class="form-control" id="filterEndDate">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">&nbsp;</label>
+            <div>
+              <button type="button" class="btn btn-primary btn-block" onclick="loadTransactions()">
+                <i class="bi bi-search"></i> 查询
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 交易记录表格 -->
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-list-ul"></i> 交易记录</h5>
+        <div>
+          <button class="btn btn-success btn-sm" onclick="exportTransactions()">
+            <i class="bi bi-download"></i> 导出Excel
+          </button>
+          <button class="btn btn-primary btn-sm ml-2" onclick="loadTransactions()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-hover transaction-table">
+            <thead class="thead-light">
+              <tr>
+                <th>交易ID</th>
+                <th>用户</th>
+                <th>金额</th>
+                <th>类型</th>
+                <th>支付方式</th>
+                <th>描述</th>
+                <th>关联预约</th>
+                <th>交易时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="transactionTableBody">
+              <tr>
+                <td colspan="9" class="text-center">加载中...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        
+        <!-- 分页 -->
+        <nav aria-label="交易记录分页">
+          <ul class="pagination justify-content-center" id="pagination">
+          </ul>
+        </nav>
+      </div>
+    </div>
+  </div>
+
+  <!-- 交易详情模态框 -->
+  <div class="modal fade" id="transactionDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">交易详情</h5>
+          <button type="button" class="close" data-dismiss="modal">
+            <span>&times;</span>
+          </button>
+        </div>
+        <div class="modal-body" id="transactionDetailContent">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 退款模态框 -->
+  <div class="modal fade" id="refundModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">申请退款</h5>
+          <button type="button" class="close" data-dismiss="modal">
+            <span>&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <form id="refundForm">
+            <input type="hidden" id="refundTransactionId">
+            <div class="form-group">
+              <label>原交易金额</label>
+              <input type="text" class="form-control" id="originalAmount" readonly>
+            </div>
+            <div class="form-group">
+              <label>退款金额</label>
+              <input type="number" class="form-control" id="refundAmount" step="0.01" required>
+            </div>
+            <div class="form-group">
+              <label>退款原因</label>
+              <textarea class="form-control" id="refundReason" rows="3" required></textarea>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-danger" onclick="processRefund()">确认退款</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let currentPage = 1;
+    const pageSize = 20;
+
+    // 检查管理员权限
+    function checkAdminAuth() {
+      const userData = localStorage.getItem('userData');
+      if (!userData) {
+        alert('请先登录');
+        window.location.href = '/index.html';
+        return false;
+      }
+      
+      const user = JSON.parse(userData);
+      if (user.role !== 'super_admin' && user.role !== 'campus_admin') {
+        alert('权限不足，需要管理员权限');
+        window.location.href = '/index.html';
+        return false;
+      }
+      return true;
+    }
+
+    // 加载统计数据
+    async function loadStats() {
+      try {
+        const res = await fetch('/api/payment/stats');
+        const data = await res.json();
+        
+        if (res.ok) {
+          document.getElementById('todayIncome').textContent = '￥' + (data.todayIncome || 0).toFixed(2);
+          document.getElementById('monthIncome').textContent = '￥' + (data.monthIncome || 0).toFixed(2);
+          document.getElementById('totalRecharge').textContent = '￥' + (data.totalRecharge || 0).toFixed(2);
+          document.getElementById('courseIncome').textContent = '￥' + (data.courseIncome || 0).toFixed(2);
+        }
+      } catch (error) {
+        console.error('加载统计数据失败:', error);
+      }
+    }
+
+    // 加载交易记录
+    async function loadTransactions(page = 1) {
+      const params = new URLSearchParams({
+        page: page,
+        pageSize: pageSize,
+        userId: document.getElementById('filterUserId').value || '',
+        type: document.getElementById('filterType').value || '',
+        method: document.getElementById('filterMethod').value || '',
+        startDate: document.getElementById('filterStartDate').value || '',
+        endDate: document.getElementById('filterEndDate').value || ''
+      });
+
+      try {
+        const res = await fetch(`/api/payment/transactions?${params}`);
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.error || '加载失败');
+        }
+
+        renderTransactionTable(data.transactions || []);
+        renderPagination(data.totalPages || 1, page);
+        currentPage = page;
+        
+      } catch (error) {
+        document.getElementById('transactionTableBody').innerHTML = 
+          `<tr><td colspan="9" class="text-center text-danger">加载失败: ${error.message}</td></tr>`;
+      }
+    }
+
+    // 渲染交易表格
+    function renderTransactionTable(transactions) {
+      const tbody = document.getElementById('transactionTableBody');
+      
+      if (transactions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无交易记录</td></tr>';
+        return;
+      }
+
+      const html = transactions.map(transaction => {
+        const amountClass = transaction.amount >= 0 ? 'amount-positive' : 'amount-negative';
+        const amountText = transaction.amount >= 0 ? `+￥${transaction.amount}` : `-￥${Math.abs(transaction.amount)}`;
+        
+        const typeText = getTypeText(transaction.type);
+        const methodBadge = getMethodBadge(transaction.description || '');
+        
+        return `
+          <tr>
+            <td>${transaction.id}</td>
+            <td>
+              <div>ID: ${transaction.user_id}</div>
+              <small class="text-muted">${transaction.username || '未知用户'}</small>
+            </td>
+            <td class="${amountClass}">${amountText}</td>
+            <td>${typeText}</td>
+            <td>${methodBadge}</td>
+            <td>${transaction.description || '-'}</td>
+            <td>${transaction.ref_id ? `预约#${transaction.ref_id}` : '-'}</td>
+            <td>${new Date(transaction.created_at).toLocaleString()}</td>
+            <td>
+              <button class="btn btn-info btn-sm" onclick="showTransactionDetail(${transaction.id})">
+                <i class="bi bi-eye"></i>
+              </button>
+              ${transaction.type === 'recharge' && transaction.amount > 0 ? 
+                `<button class="btn btn-warning btn-sm ml-1" onclick="showRefundModal(${transaction.id}, ${transaction.amount})">
+                  <i class="bi bi-arrow-counterclockwise"></i>
+                </button>` : ''}
+            </td>
+          </tr>
+        `;
+      }).join('');
+      
+      tbody.innerHTML = html;
+    }
+
+    // 获取交易类型文本
+    function getTypeText(type) {
+      const types = {
+        'recharge': '<span class="badge badge-success">充值</span>',
+        'reservation_fee': '<span class="badge badge-primary">课程费用</span>',
+        'refund': '<span class="badge badge-warning">退款</span>',
+        'penalty': '<span class="badge badge-danger">违约金</span>'
+      };
+      return types[type] || `<span class="badge badge-secondary">${type}</span>`;
+    }
+
+    // 获取支付方式徽章
+    function getMethodBadge(description) {
+      if (description.includes('微信')) {
+        return '<span class="badge badge-success payment-method-badge">微信支付</span>';
+      } else if (description.includes('支付宝')) {
+        return '<span class="badge badge-primary payment-method-badge">支付宝</span>';
+      } else if (description.includes('线下')) {
+        return '<span class="badge badge-warning payment-method-badge">线下支付</span>';
+      }
+      return '<span class="badge badge-secondary payment-method-badge">其他</span>';
+    }
+
+    // 渲染分页
+    function renderPagination(totalPages, currentPage) {
+      const pagination = document.getElementById('pagination');
+      
+      if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+      }
+
+      let html = '';
+      
+      // 上一页
+      html += `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadTransactions(${currentPage - 1})">上一页</a>
+      </li>`;
+      
+      // 页码
+      for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
+        html += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+          <a class="page-link" href="#" onclick="loadTransactions(${i})">${i}</a>
+        </li>`;
+      }
+      
+      // 下一页
+      html += `<li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadTransactions(${currentPage + 1})">下一页</a>
+      </li>`;
+      
+      pagination.innerHTML = html;
+    }
+
+    // 显示交易详情
+    async function showTransactionDetail(transactionId) {
+      try {
+        const res = await fetch(`/api/payment/transaction/${transactionId}`);
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.error || '加载失败');
+        }
+
+        const transaction = data.transaction;
+        const html = `
+          <div class="row">
+            <div class="col-md-6">
+              <h6>基本信息</h6>
+              <table class="table table-sm">
+                <tr><td>交易ID:</td><td>${transaction.id}</td></tr>
+                <tr><td>用户ID:</td><td>${transaction.user_id}</td></tr>
+                <tr><td>用户名:</td><td>${transaction.username || '未知'}</td></tr>
+                <tr><td>金额:</td><td class="${transaction.amount >= 0 ? 'text-success' : 'text-danger'}">
+                  ${transaction.amount >= 0 ? '+' : ''}￥${transaction.amount}</td></tr>
+                <tr><td>类型:</td><td>${getTypeText(transaction.type)}</td></tr>
+                <tr><td>时间:</td><td>${new Date(transaction.created_at).toLocaleString()}</td></tr>
+              </table>
+            </div>
+            <div class="col-md-6">
+              <h6>详细信息</h6>
+              <table class="table table-sm">
+                <tr><td>描述:</td><td>${transaction.description || '-'}</td></tr>
+                <tr><td>关联预约:</td><td>${transaction.ref_id || '-'}</td></tr>
+                <tr><td>支付方式:</td><td>${getMethodBadge(transaction.description || '')}</td></tr>
+              </table>
+            </div>
+          </div>
+        `;
+        
+        document.getElementById('transactionDetailContent').innerHTML = html;
+        $('#transactionDetailModal').modal('show');
+        
+      } catch (error) {
+        alert('加载交易详情失败: ' + error.message);
+      }
+    }
+
+    // 显示退款模态框
+    function showRefundModal(transactionId, amount) {
+      document.getElementById('refundTransactionId').value = transactionId;
+      document.getElementById('originalAmount').value = '￥' + amount;
+      document.getElementById('refundAmount').value = amount;
+      document.getElementById('refundReason').value = '';
+      $('#refundModal').modal('show');
+    }
+
+    // 处理退款
+    async function processRefund() {
+      const transactionId = document.getElementById('refundTransactionId').value;
+      const refundAmount = parseFloat(document.getElementById('refundAmount').value);
+      const refundReason = document.getElementById('refundReason').value;
+      
+      if (!refundAmount || refundAmount <= 0) {
+        alert('请输入有效的退款金额');
+        return;
+      }
+      
+      if (!refundReason.trim()) {
+        alert('请输入退款原因');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/payment/refund', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transactionId: transactionId,
+            amount: refundAmount,
+            reason: refundReason
+          })
+        });
+
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.error || '退款失败');
+        }
+
+        alert('退款成功');
+        $('#refundModal').modal('hide');
+        loadTransactions(currentPage);
+        loadStats();
+        
+      } catch (error) {
+        alert('退款失败: ' + error.message);
+      }
+    }
+
+    // 导出交易记录
+    function exportTransactions() {
+      const params = new URLSearchParams({
+        userId: document.getElementById('filterUserId').value || '',
+        type: document.getElementById('filterType').value || '',
+        method: document.getElementById('filterMethod').value || '',
+        startDate: document.getElementById('filterStartDate').value || '',
+        endDate: document.getElementById('filterEndDate').value || '',
+        export: 'excel'
+      });
+
+      window.open(`/api/payment/export?${params}`, '_blank');
+    }
+
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+      if (checkAdminAuth()) {
+        loadStats();
+        loadTransactions();
+        
+        // 设置默认日期范围（最近30天）
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - 30);
+        
+        document.getElementById('filterEndDate').value = endDate.toISOString().split('T')[0];
+        document.getElementById('filterStartDate').value = startDate.toISOString().split('T')[0];
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>课程评价 - 乒乓球培训管理系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/style.css" rel="stylesheet">
+    <style>
+        .rating-stars {
+            font-size: 1.5rem;
+            color: #ddd;
+            cursor: pointer;
+        }
+        .rating-stars .star.active {
+            color: #ffc107;
+        }
+        .rating-stars .star:hover,
+        .rating-stars .star:hover ~ .star {
+            color: #ffc107;
+        }
+        .review-card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            background: #f8f9fa;
+        }
+        .review-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .coach-stats {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">乒乓球培训管理系统</a>
+            <div class="navbar-nav ml-auto">
+                <span class="navbar-text mr-3" id="userInfo"></span>
+                <button class="btn btn-outline-light btn-sm" onclick="logout()">退出</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h2>
+            <i class="fas fa-star"></i>
+            课程评价
+        </h2>
+
+        <!-- 学员视角：我的待评价课程 -->
+        <div id="studentSection" style="display: none;">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>待评价的课程</h5>
+                </div>
+                <div class="card-body">
+                    <div id="pendingReviews">
+                        <div class="text-center text-muted">
+                            <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                            <p>加载中...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h5>我的评价历史</h5>
+                </div>
+                <div class="card-body">
+                    <div id="myReviews">
+                        <div class="text-center text-muted">
+                            <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                            <p>加载中...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 教练视角：收到的评价 -->
+        <div id="coachSection" style="display: none;">
+            <div class="coach-stats">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h4>我的评价统计</h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p class="mb-1">平均评分：<span id="avgRating">-</span> ⭐</p>
+                                <p class="mb-0">总评价数：<span id="totalReviews">-</span></p>
+                            </div>
+                            <div class="col-md-6">
+                                <p class="mb-1">本月评价：<span id="monthReviews">-</span></p>
+                                <p class="mb-0">好评率：<span id="goodRating">-</span>%</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-right">
+                        <div id="ratingDistribution"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h5>收到的评价</h5>
+                </div>
+                <div class="card-body">
+                    <div id="receivedReviews">
+                        <div class="text-center text-muted">
+                            <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                            <p>加载中...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 评价模态框 -->
+    <div class="modal fade" id="reviewModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">课程评价</h5>
+                    <button type="button" class="close" data-dismiss="modal">
+                        <span>&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div id="reviewForm">
+                        <div class="course-info mb-3 p-3 bg-light rounded">
+                            <h6>课程信息</h6>
+                            <p class="mb-1"><strong>教练：</strong><span id="modalCoachName">-</span></p>
+                            <p class="mb-1"><strong>时间：</strong><span id="modalTime">-</span></p>
+                            <p class="mb-0"><strong>课程费用：</strong><span id="modalFee">-</span></p>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>课程评分</label>
+                            <div class="rating-stars" id="ratingStars">
+                                <span class="star" data-rating="1">★</span>
+                                <span class="star" data-rating="2">★</span>
+                                <span class="star" data-rating="3">★</span>
+                                <span class="star" data-rating="4">★</span>
+                                <span class="star" data-rating="5">★</span>
+                            </div>
+                            <small class="form-text text-muted">点击星星进行评分</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>评价内容</label>
+                            <textarea class="form-control" id="reviewComment" rows="4" 
+                                    placeholder="请分享您对这次课程的感受和建议..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="submitReview()">提交评价</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        let currentUser = null;
+        let currentReservation = null;
+        let selectedRating = 0;
+
+        $(document).ready(function() {
+            // 检查登录状态
+            const userData = localStorage.getItem('userData');
+            if (!userData) {
+                window.location.href = '/index.html';
+                return;
+            }
+            
+            currentUser = JSON.parse(userData);
+            document.getElementById('userInfo').textContent = `${currentUser.real_name} (${getRoleName(currentUser.role)})`;
+            
+            // 根据角色显示不同内容
+            if (currentUser.role === 'student') {
+                document.getElementById('studentSection').style.display = 'block';
+                loadPendingReviews();
+                loadMyReviews();
+            } else if (currentUser.role === 'coach') {
+                document.getElementById('coachSection').style.display = 'block';
+                loadCoachStats();
+                loadReceivedReviews();
+            } else {
+                alert('只有学员和教练可以使用评价功能');
+                window.location.href = '/index.html';
+            }
+            
+            // 绑定评分点击事件
+            bindRatingEvents();
+        });
+
+        function getRoleName(role) {
+            const roleNames = {
+                'student': '学员',
+                'coach': '教练',
+                'campus_admin': '校区管理员',
+                'super_admin': '超级管理员'
+            };
+            return roleNames[role] || role;
+        }
+
+        function bindRatingEvents() {
+            $('#ratingStars .star').on('click', function() {
+                selectedRating = parseInt($(this).data('rating'));
+                updateRatingDisplay();
+            });
+            
+            $('#ratingStars .star').on('mouseenter', function() {
+                const rating = parseInt($(this).data('rating'));
+                $('#ratingStars .star').each(function(index) {
+                    $(this).toggleClass('active', index < rating);
+                });
+            });
+            
+            $('#ratingStars').on('mouseleave', function() {
+                updateRatingDisplay();
+            });
+        }
+
+        function updateRatingDisplay() {
+            $('#ratingStars .star').each(function(index) {
+                $(this).toggleClass('active', index < selectedRating);
+            });
+        }
+
+        function loadPendingReviews() {
+            fetch(`/api/reviews/pending/${currentUser.id}`)
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('pendingReviews');
+                    
+                    if (data.error || !data.reservations || data.reservations.length === 0) {
+                        container.innerHTML = `
+                            <div class="text-center text-muted">
+                                <i class="fas fa-check-circle fa-3x mb-3"></i>
+                                <p>暂无待评价的课程</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    container.innerHTML = data.reservations.map(reservation => `
+                        <div class="review-card">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">与 ${reservation.coach_name} 的课程</h6>
+                                    <p class="mb-1 text-muted">
+                                        <i class="fas fa-clock"></i>
+                                        ${new Date(reservation.start_time).toLocaleString('zh-CN')}
+                                    </p>
+                                    <p class="mb-0 text-success">
+                                        <i class="fas fa-money-bill"></i>
+                                        课程费用：￥${reservation.fee}
+                                    </p>
+                                </div>
+                                <button class="btn btn-primary btn-sm" onclick="openReviewModal(${JSON.stringify(reservation).replace(/"/g, '&quot;')})">
+                                    立即评价
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.error('加载待评价课程失败:', error);
+                    document.getElementById('pendingReviews').innerHTML = `
+                        <div class="text-center text-danger">
+                            <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
+                            <p>加载失败，请稍后重试</p>
+                        </div>
+                    `;
+                });
+        }
+
+        function loadMyReviews() {
+            fetch(`/api/reviews/my/${currentUser.id}`)
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('myReviews');
+                    
+                    if (data.error || !data.reviews || data.reviews.length === 0) {
+                        container.innerHTML = `
+                            <div class="text-center text-muted">
+                                <i class="fas fa-comment-slash fa-3x mb-3"></i>
+                                <p>暂无评价记录</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    container.innerHTML = data.reviews.map(review => `
+                        <div class="review-card">
+                            <div class="review-header">
+                                <h6 class="mb-1">对 ${review.coach_name} 的评价</h6>
+                                <div class="rating-display">
+                                    ${'★'.repeat(review.rating)}${'☆'.repeat(5-review.rating)}
+                                </div>
+                            </div>
+                            <p class="mb-1 text-muted">
+                                <i class="fas fa-clock"></i>
+                                课程时间：${new Date(review.lesson_time).toLocaleString('zh-CN')}
+                            </p>
+                            <p class="mb-1">${review.comment}</p>
+                            <small class="text-muted">评价时间：${new Date(review.created_at).toLocaleString('zh-CN')}</small>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.error('加载我的评价失败:', error);
+                });
+        }
+
+        function loadCoachStats() {
+            fetch(`/api/reviews/coach-stats/${currentUser.id}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error('加载教练统计失败:', data.error);
+                        return;
+                    }
+                    
+                    document.getElementById('avgRating').textContent = (data.avgRating || 0).toFixed(1);
+                    document.getElementById('totalReviews').textContent = data.totalReviews || 0;
+                    document.getElementById('monthReviews').textContent = data.monthReviews || 0;
+                    document.getElementById('goodRating').textContent = ((data.goodRating || 0) * 100).toFixed(1);
+                })
+                .catch(error => {
+                    console.error('加载教练统计失败:', error);
+                });
+        }
+
+        function loadReceivedReviews() {
+            fetch(`/api/reviews/received/${currentUser.id}`)
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('receivedReviews');
+                    
+                    if (data.error || !data.reviews || data.reviews.length === 0) {
+                        container.innerHTML = `
+                            <div class="text-center text-muted">
+                                <i class="fas fa-comment-slash fa-3x mb-3"></i>
+                                <p>暂无收到的评价</p>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    container.innerHTML = data.reviews.map(review => `
+                        <div class="review-card">
+                            <div class="review-header">
+                                <h6 class="mb-1">来自 ${review.student_name} 的评价</h6>
+                                <div class="rating-display">
+                                    ${'★'.repeat(review.rating)}${'☆'.repeat(5-review.rating)}
+                                </div>
+                            </div>
+                            <p class="mb-1 text-muted">
+                                <i class="fas fa-clock"></i>
+                                课程时间：${new Date(review.lesson_time).toLocaleString('zh-CN')}
+                            </p>
+                            <p class="mb-1">${review.comment}</p>
+                            <small class="text-muted">评价时间：${new Date(review.created_at).toLocaleString('zh-CN')}</small>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.error('加载收到的评价失败:', error);
+                });
+        }
+
+        function openReviewModal(reservation) {
+            currentReservation = reservation;
+            selectedRating = 0;
+            
+            document.getElementById('modalCoachName').textContent = reservation.coach_name;
+            document.getElementById('modalTime').textContent = new Date(reservation.start_time).toLocaleString('zh-CN');
+            document.getElementById('modalFee').textContent = '￥' + reservation.fee;
+            document.getElementById('reviewComment').value = '';
+            
+            updateRatingDisplay();
+            $('#reviewModal').modal('show');
+        }
+
+        function submitReview() {
+            if (!currentReservation) {
+                alert('评价信息丢失，请重试');
+                return;
+            }
+            
+            if (selectedRating === 0) {
+                alert('请选择评分');
+                return;
+            }
+            
+            const comment = document.getElementById('reviewComment').value.trim();
+            if (!comment) {
+                alert('请输入评价内容');
+                return;
+            }
+            
+            fetch('/api/reviews/submit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    reservation_id: currentReservation.id,
+                    student_id: currentUser.id,
+                    coach_id: currentReservation.coach_id,
+                    rating: selectedRating,
+                    comment: comment
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('提交评价失败：' + data.error);
+                    return;
+                }
+                
+                alert('评价提交成功！');
+                $('#reviewModal').modal('hide');
+                loadPendingReviews();
+                loadMyReviews();
+            })
+            .catch(error => {
+                console.error('提交评价失败:', error);
+                alert('提交评价失败，请稍后重试');
+            });
+        }
+
+        function logout() {
+            localStorage.removeItem('userData');
+            window.location.href = '/index.html';
+        }
+    </script>
+</body>
+</html>

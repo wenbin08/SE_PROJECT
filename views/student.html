@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学生门户 - 乒乓球培训管理系统</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+  <style>
+    .feature-card {
+      border: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      height: 100%;
+    }
+    .feature-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .feature-icon {
+      font-size: 3rem;
+      margin-bottom: 15px;
+    }
+    .notification-badge {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      background: #dc3545;
+      color: white;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .stats-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 15px;
+    }
+    .quick-action {
+      text-decoration: none;
+      color: inherit;
+    }
+    .quick-action:hover {
+      text-decoration: none;
+      color: inherit;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container">
+      <a class="navbar-brand" href="#">
+        <i class="bi bi-trophy"></i> 乒乓球培训系统
+      </a>
+      <div class="navbar-nav ml-auto">
+        <div class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle position-relative" href="#" id="navbarDropdown" role="button" data-toggle="dropdown">
+            <i class="bi bi-bell"></i> 消息
+            <span class="notification-badge" id="messageBadge" style="display: none;">0</span>
+          </a>
+          <div class="dropdown-menu dropdown-menu-right" style="width: 300px;">
+            <h6 class="dropdown-header">最新消息</h6>
+            <div id="messagePreview" style="max-height: 200px; overflow-y: auto;">
+              <div class="dropdown-item-text text-muted">暂无消息</div>
+            </div>
+            <div class="dropdown-divider"></div>
+            <a class="dropdown-item text-center" href="/messages.html">
+              查看全部消息
+            </a>
+          </div>
+        </div>
+        <span class="navbar-text ml-3">
+          欢迎，<span id="studentName">学生</span>
+        </span>
+        <a class="nav-link text-light ml-2" href="#" onclick="logout()">
+          <i class="bi bi-box-arrow-right"></i> 退出
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container mt-4">
+    <!-- 欢迎横幅 -->
+    <div class="row mb-4">
+      <div class="col-12">
+        <div class="card stats-card">
+          <div class="card-body text-center py-4">
+            <h3 class="mb-0">欢迎来到乒乓球培训系统</h3>
+            <p class="mb-0">开始您的乒乓球学习之旅</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 快速统计 -->
+    <div class="row mb-4">
+      <div class="col-md-3">
+        <div class="card">
+          <div class="card-body text-center">
+            <i class="bi bi-person-badge text-primary" style="font-size: 2rem;"></i>
+            <h4 class="mt-2" id="coachCount">0</h4>
+            <p class="text-muted mb-0">我的教练</p>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card">
+          <div class="card-body text-center">
+            <i class="bi bi-calendar-check text-success" style="font-size: 2rem;"></i>
+            <h4 class="mt-2" id="reservationCount">0</h4>
+            <p class="text-muted mb-0">本月预约</p>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card">
+          <div class="card-body text-center">
+            <i class="bi bi-wallet2 text-warning" style="font-size: 2rem;"></i>
+            <h4 class="mt-2" id="accountBalance">￥0</h4>
+            <p class="text-muted mb-0">账户余额</p>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card">
+          <div class="card-body text-center">
+            <i class="bi bi-trophy text-info" style="font-size: 2rem;"></i>
+            <h4 class="mt-2" id="tournamentCount">0</h4>
+            <p class="text-muted mb-0">参与赛事</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 功能快捷入口 -->
+    <div class="row mb-4">
+      <div class="col-12">
+        <h5 class="mb-3">
+          <i class="bi bi-grid-3x3-gap"></i> 功能中心
+        </h5>
+      </div>
+      <div class="col-md-4 mb-3">
+        <a href="/coach_select.html" class="quick-action">
+          <div class="card feature-card">
+            <div class="card-body text-center">
+              <i class="bi bi-person-plus feature-icon text-primary"></i>
+              <h5>选择教练</h5>
+              <p class="text-muted">浏览和申请心仪的教练</p>
+            </div>
+          </div>
+        </a>
+      </div>
+      <div class="col-md-4 mb-3">
+        <a href="/student_reservation.html" class="quick-action">
+          <div class="card feature-card">
+            <div class="card-body text-center">
+              <i class="bi bi-calendar-plus feature-icon text-success"></i>
+              <h5>课程预约</h5>
+              <p class="text-muted">预约训练课程和时间</p>
+            </div>
+          </div>
+        </a>
+      </div>
+      <div class="col-md-4 mb-3">
+        <a href="/recharge.html" class="quick-action">
+          <div class="card feature-card">
+            <div class="card-body text-center">
+              <i class="bi bi-credit-card feature-icon text-warning"></i>
+              <h5>账户充值</h5>
+              <p class="text-muted">为账户充值支付课程费用</p>
+            </div>
+          </div>
+        </a>
+      </div>
+      <div class="col-md-4 mb-3">
+        <a href="/reviews.html" class="quick-action">
+          <div class="card feature-card">
+            <div class="card-body text-center">
+              <i class="bi bi-star feature-icon text-info"></i>
+              <h5>课程评价</h5>
+              <p class="text-muted">对完成的课程进行评价</p>
+            </div>
+          </div>
+        </a>
+      </div>
+      <div class="col-md-4 mb-3">
+        <a href="/tournament.html" class="quick-action">
+          <div class="card feature-card">
+            <div class="card-body text-center">
+              <i class="bi bi-trophy feature-icon text-danger"></i>
+              <h5>月赛报名</h5>
+              <p class="text-muted">参加每月举办的比赛</p>
+            </div>
+          </div>
+        </a>
+      </div>
+      <div class="col-md-4 mb-3">
+        <a href="/messages.html" class="quick-action">
+          <div class="card feature-card position-relative">
+            <div class="card-body text-center">
+              <i class="bi bi-chat-dots feature-icon text-secondary"></i>
+              <h5>消息中心</h5>
+              <p class="text-muted">查看系统通知和消息</p>
+              <span class="notification-badge" id="messageCard-badge" style="display: none;">0</span>
+            </div>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <!-- 最近活动 -->
+    <div class="row">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h6 class="mb-0">
+              <i class="bi bi-clock-history"></i> 最近预约
+            </h6>
+          </div>
+          <div class="card-body">
+            <div id="recentReservations">
+              <div class="text-center text-muted py-3">加载中...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h6 class="mb-0">
+              <i class="bi bi-graph-up"></i> 学习进度
+            </h6>
+          </div>
+          <div class="card-body">
+            <div id="learningProgress">
+              <div class="text-center text-muted py-3">加载中...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let currentUser = null;
+
+    // 检查用户认证
+    function checkAuth() {
+      const userData = localStorage.getItem('userData');
+      if (!userData) {
+        alert('请先登录');
+        window.location.href = '/index.html';
+        return false;
+      }
+      
+      currentUser = JSON.parse(userData);
+      if (currentUser.role !== 'student') {
+        alert('权限不足，请使用学生账户登录');
+        window.location.href = '/index.html';
+        return false;
+      }
+      
+      document.getElementById('studentName').textContent = currentUser.real_name || currentUser.username;
+      return true;
+    }
+
+    // 加载统计数据
+    async function loadStats() {
+      if (!currentUser) return;
+
+      try {
+        // 加载教练数量
+        const coachRes = await fetch(`/api/student/coaches?student_id=${currentUser.id}`);
+        if (coachRes.ok) {
+          const coachData = await coachRes.json();
+          document.getElementById('coachCount').textContent = (coachData.coaches || []).length;
+        }
+
+        // 加载本月预约数量
+        const reservationRes = await fetch(`/api/student/reservations/count?student_id=${currentUser.id}`);
+        if (reservationRes.ok) {
+          const reservationData = await reservationRes.json();
+          document.getElementById('reservationCount').textContent = reservationData.count || 0;
+        }
+
+        // 加载账户余额
+        const balanceRes = await fetch(`/api/account/${currentUser.id}`);
+        if (balanceRes.ok) {
+          const balanceData = await balanceRes.json();
+          document.getElementById('accountBalance').textContent = '￥' + (balanceData.balance || 0).toFixed(2);
+        }
+
+        // 加载参与赛事数量
+        const tournamentRes = await fetch(`/api/student/tournaments/count?student_id=${currentUser.id}`);
+        if (tournamentRes.ok) {
+          const tournamentData = await tournamentRes.json();
+          document.getElementById('tournamentCount').textContent = tournamentData.count || 0;
+        }
+
+      } catch (error) {
+        console.error('加载统计数据失败:', error);
+      }
+    }
+
+    // 加载消息预览
+    async function loadMessagePreview() {
+      if (!currentUser) return;
+
+      try {
+        const res = await fetch(`/api/messages?recipient_id=${currentUser.id}`);
+        const data = await res.json();
+        
+        if (res.ok && data.messages) {
+          const unreadMessages = data.messages.filter(msg => !msg.is_read);
+          const recentMessages = data.messages.slice(0, 3);
+          
+          // 更新徽章
+          if (unreadMessages.length > 0) {
+            document.getElementById('messageBadge').textContent = unreadMessages.length;
+            document.getElementById('messageBadge').style.display = 'flex';
+            document.getElementById('messageCard-badge').textContent = unreadMessages.length;
+            document.getElementById('messageCard-badge').style.display = 'flex';
+          }
+          
+          // 更新消息预览
+          const container = document.getElementById('messagePreview');
+          if (recentMessages.length > 0) {
+            const html = recentMessages.map(msg => `
+              <div class="dropdown-item py-2 ${msg.is_read ? '' : 'bg-light'}">
+                <div class="d-flex justify-content-between">
+                  <strong class="text-truncate" style="max-width: 200px;">${msg.title}</strong>
+                  ${msg.is_read ? '' : '<i class="bi bi-circle-fill text-primary" style="font-size: 0.5rem;"></i>'}
+                </div>
+                <small class="text-muted">${new Date(msg.created_at).toLocaleString()}</small>
+              </div>
+            `).join('');
+            container.innerHTML = html;
+          }
+        }
+      } catch (error) {
+        console.error('加载消息失败:', error);
+      }
+    }
+
+    // 加载最近预约
+    async function loadRecentReservations() {
+      if (!currentUser) return;
+
+      try {
+        const res = await fetch(`/api/student/reservations/recent?student_id=${currentUser.id}&limit=3`);
+        const data = await res.json();
+        
+        const container = document.getElementById('recentReservations');
+        
+        if (!res.ok || !data.reservations || data.reservations.length === 0) {
+          container.innerHTML = '<div class="text-muted text-center py-3">暂无预约记录</div>';
+          return;
+        }
+
+        const html = data.reservations.map(reservation => `
+          <div class="border-bottom pb-2 mb-2">
+            <div class="d-flex justify-content-between">
+              <div>
+                <strong>${reservation.coach_name} 教练</strong>
+                <small class="text-muted d-block">${new Date(reservation.start_time).toLocaleString()}</small>
+              </div>
+              <span class="badge badge-${getStatusColor(reservation.status)}">${getStatusText(reservation.status)}</span>
+            </div>
+          </div>
+        `).join('');
+        
+        container.innerHTML = html;
+      } catch (error) {
+        document.getElementById('recentReservations').innerHTML = '<div class="text-danger text-center py-3">加载失败</div>';
+      }
+    }
+
+    // 加载学习进度
+    async function loadLearningProgress() {
+      if (!currentUser) return;
+
+      try {
+        const res = await fetch(`/api/student/progress?student_id=${currentUser.id}`);
+        const data = await res.json();
+        
+        const container = document.getElementById('learningProgress');
+        
+        if (!res.ok || !data.progress) {
+          container.innerHTML = '<div class="text-muted text-center py-3">暂无学习记录</div>';
+          return;
+        }
+
+        const progress = data.progress;
+        const html = `
+          <div class="mb-3">
+            <div class="d-flex justify-content-between">
+              <span>总课时</span>
+              <strong>${progress.total_hours || 0} 小时</strong>
+            </div>
+          </div>
+          <div class="mb-3">
+            <div class="d-flex justify-content-between">
+              <span>本月课时</span>
+              <strong>${progress.month_hours || 0} 小时</strong>
+            </div>
+          </div>
+          <div class="mb-3">
+            <div class="d-flex justify-content-between">
+              <span>平均评分</span>
+              <strong>${progress.avg_rating || 0} 分</strong>
+            </div>
+          </div>
+        `;
+        
+        container.innerHTML = html;
+      } catch (error) {
+        document.getElementById('learningProgress').innerHTML = '<div class="text-danger text-center py-3">加载失败</div>';
+      }
+    }
+
+    // 获取状态颜色
+    function getStatusColor(status) {
+      const colors = {
+        'pending': 'warning',
+        'confirmed': 'success',
+        'completed': 'info',
+        'cancelled': 'danger'
+      };
+      return colors[status] || 'secondary';
+    }
+
+    // 获取状态文本
+    function getStatusText(status) {
+      const texts = {
+        'pending': '待确认',
+        'confirmed': '已确认',
+        'completed': '已完成',
+        'cancelled': '已取消'
+      };
+      return texts[status] || status;
+    }
+
+    // 退出登录
+    function logout() {
+      localStorage.removeItem('userData');
+      window.location.href = '/index.html';
+    }
+
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+      if (checkAuth()) {
+        loadStats();
+        loadMessagePreview();
+        loadRecentReservations();
+        loadLearningProgress();
+        
+        // 每30秒刷新一次消息
+        setInterval(loadMessagePreview, 30000);
+      }
+    });
+  </script>
+</body>
+</html>

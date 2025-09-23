@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>软件授权管理 - 乒乓球培训管理系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/style.css" rel="stylesheet">
+    <style>
+        .license-status {
+            padding: 2rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            color: white;
+        }
+        .status-active {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+        .status-warning {
+            background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+        }
+        .status-expired {
+            background: linear-gradient(135deg, #dc3545 0%, #e83e8c 100%);
+        }
+        .status-unlicensed {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        }
+        .feature-card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }
+        .feature-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .license-key {
+            font-family: 'Courier New', monospace;
+            background: #f8f9fa;
+            padding: 0.5rem;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            font-size: 1.1rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">乒乓球培训管理系统</a>
+            <div class="navbar-nav ml-auto">
+                <span class="navbar-text mr-3" id="userInfo"></span>
+                <button class="btn btn-outline-light btn-sm" onclick="logout()">退出</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- 授权状态显示 -->
+        <div id="licenseStatus" class="license-status">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h2 id="statusTitle">
+                        <i id="statusIcon" class="fas fa-shield-alt"></i>
+                        <span id="statusText">检查授权状态中...</span>
+                    </h2>
+                    <p id="statusMessage" class="mb-0"></p>
+                </div>
+                <div class="col-md-4 text-right">
+                    <div id="statusInfo">
+                        <div id="daysLeft" style="display: none;">
+                            <h3 id="daysCount">-</h3>
+                            <p class="mb-0">剩余天数</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- 授权信息 -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>
+                            <i class="fas fa-info-circle"></i>
+                            授权信息
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="licenseDetails">
+                            <div class="text-center text-muted">
+                                <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                                <p>正在加载授权信息...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 授权管理 -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>
+                            <i class="fas fa-cog"></i>
+                            授权管理
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- 激活授权 -->
+                        <div id="activateSection" style="display: none;">
+                            <h6>激活软件授权</h6>
+                            <div class="form-group">
+                                <label>授权码</label>
+                                <input type="text" class="form-control" id="licenseKey" 
+                                       placeholder="TTM-2025-XXXX-YYYY" maxlength="19">
+                                <small class="form-text text-muted">
+                                    请输入购买的软件授权码
+                                </small>
+                            </div>
+                            <div class="form-group">
+                                <label>设备ID</label>
+                                <input type="text" class="form-control" id="deviceId" 
+                                       placeholder="自动生成" readonly>
+                                <small class="form-text text-muted">
+                                    系统自动生成的设备标识符
+                                </small>
+                            </div>
+                            <button class="btn btn-primary btn-block" onclick="activateLicense()">
+                                激活授权
+                            </button>
+                        </div>
+
+                        <!-- 续费授权 -->
+                        <div id="renewSection" style="display: none;">
+                            <h6>续费授权</h6>
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i>
+                                年费：<strong>5000元</strong>
+                            </div>
+                            <button class="btn btn-success btn-block" onclick="renewLicense()">
+                                续费一年（5000元）
+                            </button>
+                        </div>
+
+                        <!-- 联系购买 -->
+                        <div id="purchaseSection" style="display: none;">
+                            <h6>购买授权</h6>
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                软件未授权，请联系销售购买正版授权
+                            </div>
+                            <div class="feature-card">
+                                <h6>授权包含功能</h6>
+                                <ul class="mb-0">
+                                    <li>学员注册与管理</li>
+                                    <li>教练管理与双选</li>
+                                    <li>课程预约与管理</li>
+                                    <li>账户充值与消费</li>
+                                    <li>月赛报名与编排</li>
+                                    <li>消息通知系统</li>
+                                    <li>数据统计分析</li>
+                                    <li>最多支持500用户</li>
+                                </ul>
+                            </div>
+                            <div class="text-center">
+                                <p><strong>联系电话：</strong>400-888-9999</p>
+                                <p><strong>联系邮箱：</strong>sales@ttm-system.com</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentUser = null;
+
+        $(document).ready(function() {
+            // 检查登录状态
+            const user = localStorage.getItem('userData');
+            if (!user) {
+                window.location.href = '/index.html';
+                return;
+            }
+            
+            currentUser = JSON.parse(user);
+            document.getElementById('userInfo').textContent = `${currentUser.real_name} (${getRoleName(currentUser.role)})`;
+            
+            // 只有超级管理员可以访问
+            if (currentUser.role !== 'super_admin') {
+                alert('只有超级管理员可以访问授权管理');
+                window.location.href = '/index.html';
+                return;
+            }
+            
+            // 生成设备ID
+            generateDeviceId();
+            
+            // 加载授权信息
+            loadLicenseInfo();
+        });
+
+        function getRoleName(role) {
+            const roleNames = {
+                'student': '学员',
+                'coach': '教练',
+                'campus_admin': '校区管理员',
+                'super_admin': '超级管理员'
+            };
+            return roleNames[role] || role;
+        }
+
+        function generateDeviceId() {
+            // 基于浏览器和系统信息生成设备ID
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillText('Device fingerprint', 2, 2);
+            
+            const fingerprint = [
+                navigator.userAgent,
+                navigator.language,
+                screen.width + 'x' + screen.height,
+                new Date().getTimezoneOffset(),
+                canvas.toDataURL()
+            ].join('|');
+            
+            // 简单哈希
+            let hash = 0;
+            for (let i = 0; i < fingerprint.length; i++) {
+                const char = fingerprint.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // 转换为32位整数
+            }
+            
+            const deviceId = 'DEV-' + Math.abs(hash).toString(16).toUpperCase().padStart(8, '0');
+            document.getElementById('deviceId').value = deviceId;
+        }
+
+        function loadLicenseInfo() {
+            fetch('/api/license/info')
+                .then(response => response.json())
+                .then(data => {
+                    updateLicenseDisplay(data);
+                })
+                .catch(error => {
+                    console.error('获取授权信息失败:', error);
+                    updateLicenseDisplay({
+                        status: 'error',
+                        message: '获取授权信息失败'
+                    });
+                });
+        }
+
+        function updateLicenseDisplay(license) {
+            const statusElement = document.getElementById('licenseStatus');
+            const iconElement = document.getElementById('statusIcon');
+            const titleElement = document.getElementById('statusText');
+            const messageElement = document.getElementById('statusMessage');
+            const detailsElement = document.getElementById('licenseDetails');
+            const daysLeftElement = document.getElementById('daysLeft');
+            
+            // 重置所有section的显示状态
+            document.getElementById('activateSection').style.display = 'none';
+            document.getElementById('renewSection').style.display = 'none';
+            document.getElementById('purchaseSection').style.display = 'none';
+            
+            switch (license.status) {
+                case 'active':
+                    statusElement.className = 'license-status status-active';
+                    iconElement.className = 'fas fa-shield-alt';
+                    titleElement.textContent = '授权正常';
+                    messageElement.textContent = license.message;
+                    
+                    if (license.days_left <= 30) {
+                        statusElement.className = 'license-status status-warning';
+                        iconElement.className = 'fas fa-exclamation-triangle';
+                        document.getElementById('renewSection').style.display = 'block';
+                    }
+                    
+                    daysLeftElement.style.display = 'block';
+                    document.getElementById('daysCount').textContent = license.days_left;
+                    
+                    detailsElement.innerHTML = `
+                        <div class="license-key">${license.license_key}</div>
+                        <hr>
+                        <p><strong>过期时间：</strong>${new Date(license.expire_date).toLocaleDateString('zh-CN')}</p>
+                        <p><strong>最大用户数：</strong>${license.max_users}</p>
+                        <p><strong>当前用户数：</strong>${license.current_users}</p>
+                    `;
+                    break;
+                    
+                case 'expired':
+                    statusElement.className = 'license-status status-expired';
+                    iconElement.className = 'fas fa-times-circle';
+                    titleElement.textContent = '授权已过期';
+                    messageElement.textContent = license.message;
+                    
+                    document.getElementById('renewSection').style.display = 'block';
+                    
+                    detailsElement.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            授权已于 ${new Date(license.expire_date).toLocaleDateString('zh-CN')} 过期
+                        </div>
+                        <p><strong>过期授权码：</strong>${license.license_key}</p>
+                    `;
+                    break;
+                    
+                case 'unlicensed':
+                default:
+                    statusElement.className = 'license-status status-unlicensed';
+                    iconElement.className = 'fas fa-exclamation-circle';
+                    titleElement.textContent = '软件未授权';
+                    messageElement.textContent = license.message || '请购买并激活软件授权';
+                    
+                    document.getElementById('activateSection').style.display = 'block';
+                    document.getElementById('purchaseSection').style.display = 'block';
+                    
+                    detailsElement.innerHTML = `
+                        <div class="alert alert-warning">
+                            <i class="fas fa-info-circle"></i>
+                            软件尚未激活，部分功能可能受限
+                        </div>
+                    `;
+                    break;
+            }
+        }
+
+        function activateLicense() {
+            const licenseKey = document.getElementById('licenseKey').value.trim();
+            const deviceId = document.getElementById('deviceId').value;
+            
+            if (!licenseKey) {
+                alert('请输入授权码');
+                return;
+            }
+            
+            // 验证授权码格式
+            const keyPattern = /^TTM-2025-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+            if (!keyPattern.test(licenseKey)) {
+                alert('授权码格式无效，请检查输入');
+                return;
+            }
+            
+            fetch('/api/license/activate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    license_key: licenseKey,
+                    device_id: deviceId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('激活失败：' + data.error);
+                    return;
+                }
+                
+                alert('授权激活成功！');
+                loadLicenseInfo();
+            })
+            .catch(error => {
+                console.error('激活失败:', error);
+                alert('激活失败，请稍后重试');
+            });
+        }
+
+        function renewLicense() {
+            if (!confirm('确认续费一年吗？费用为5000元。')) {
+                return;
+            }
+            
+            fetch('/api/license/renew', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    payment_amount: 5000
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('续费失败：' + data.error);
+                    return;
+                }
+                
+                alert('授权续费成功！新的授权码：' + data.license_key);
+                loadLicenseInfo();
+            })
+            .catch(error => {
+                console.error('续费失败:', error);
+                alert('续费失败，请稍后重试');
+            });
+        }
+
+        // 格式化授权码输入
+        document.addEventListener('DOMContentLoaded', function() {
+            const licenseInput = document.getElementById('licenseKey');
+            if (licenseInput) {
+                licenseInput.addEventListener('input', function(e) {
+                    let value = e.target.value.replace(/[^A-Z0-9]/g, '');
+                    if (value.length > 16) value = value.substr(0, 16);
+                    
+                    let formatted = 'TTM-2025';
+                    if (value.length > 0) formatted += '-' + value.substr(0, 4);
+                    if (value.length > 4) formatted += '-' + value.substr(4, 4);
+                    
+                    e.target.value = formatted;
+                });
+            }
+        });
+
+        function logout() {
+            localStorage.removeItem('userData');
+            window.location.href = '/index.html';
+        }
+    </script>
+</body>
+</html>

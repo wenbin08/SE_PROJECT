@@ -1,0 +1,1 @@
+ .info-card{ box-shadow:0 2px 4px rgba(0,0,0,.1);} .course-card{ transition:transform .2s; cursor:pointer;} .course-card:hover{ transform:translateY(-3px);} @media (max-width:768px){ .student-info dd{ margin-bottom:1rem; } }
