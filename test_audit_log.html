@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audit Log 测试页面</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .container { max-width: 800px; margin: 0 auto; }
+    button { margin: 10px; padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    .result { margin: 20px 0; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; }
+    .error { background: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+    .success { background: #d4edda; border-color: #c3e6cb; color: #155724; }
+    pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Audit Log 数据库测试</h1>
+    
+    <button onclick="testAuditLogTable()">检查audit_log表状态</button>
+    <button onclick="addTestLogs()">添加测试日志</button>
+    <button onclick="testAuditLogQuery()">测试日志查询</button>
+    <button onclick="testLogAuditFunction()">测试logAudit函数</button>
+    
+    <div id="result" class="result" style="display:none;"></div>
+  </div>
+
+  <script>
+    function showResult(content, isError = false) {
+      const resultDiv = document.getElementById('result');
+      resultDiv.style.display = 'block';
+      resultDiv.className = 'result ' + (isError ? 'error' : 'success');
+      resultDiv.innerHTML = content;
+    }
+
+    async function testAuditLogTable() {
+      try {
+        const response = await fetch('/api/admin/audit-log-test');
+        const data = await response.json();
+        
+        let content = '<h3>audit_log表状态检查</h3>';
+        if (data.error) {
+          content += `<p><strong>错误:</strong> ${data.error}</p>`;
+          showResult(content, true);
+        } else {
+          content += `<p><strong>表存在:</strong> ${data.tableExists}</p>`;
+          content += `<p><strong>记录数:</strong> ${data.recordCount}</p>`;
+          content += `<p><strong>消息:</strong> ${data.message}</p>`;
+          if (data.structure) {
+            content += '<h4>表结构:</h4>';
+            content += '<pre>' + JSON.stringify(data.structure, null, 2) + '</pre>';
+          }
+          showResult(content);
+        }
+      } catch (error) {
+        showResult(`<h3>请求失败</h3><p>${error.message}</p>`, true);
+      }
+    }
+
+    async function addTestLogs() {
+      try {
+        const response = await fetch('/api/admin/add-test-log', { method: 'POST' });
+        const data = await response.json();
+        
+        let content = '<h3>添加测试日志</h3>';
+        if (data.success) {
+          content += `<p>${data.message}</p>`;
+          showResult(content);
+        } else {
+          content += `<p>添加失败: ${data.error || '未知错误'}</p>`;
+          showResult(content, true);
+        }
+      } catch (error) {
+        showResult(`<h3>添加测试日志失败</h3><p>${error.message}</p>`, true);
+      }
+    }
+
+    async function testAuditLogQuery() {
+      try {
+        const response = await fetch('/api/admin/audit-log?limit=10');
+        const data = await response.json();
+        
+        let content = '<h3>日志查询测试</h3>';
+        if (Array.isArray(data)) {
+          content += `<p>查询成功，返回 ${data.length} 条记录</p>`;
+          if (data.length > 0) {
+            content += '<h4>最新日志:</h4>';
+            content += '<pre>' + JSON.stringify(data.slice(0, 3), null, 2) + '</pre>';
+          }
+          showResult(content);
+        } else if (data.error) {
+          content += `<p>查询失败: ${data.error}</p>`;
+          showResult(content, true);
+        }
+      } catch (error) {
+        showResult(`<h3>查询失败</h3><p>${error.message}</p>`, true);
+      }
+    }
+
+    async function testLogAuditFunction() {
+      try {
+        // 通过触发一个会调用logAudit的API来测试
+        const response = await fetch('/api/admin/statistics', { method: 'GET' });
+        const data = await response.json();
+        
+        // 然后检查是否有新的日志记录
+        setTimeout(async () => {
+          const logResponse = await fetch('/api/admin/audit-log?limit=5');
+          const logs = await logResponse.json();
+          
+          let content = '<h3>logAudit函数测试</h3>';
+          content += '<p>通过调用API间接测试logAudit函数</p>';
+          content += `<p>最新的 ${logs.length} 条日志记录:</p>`;
+          content += '<pre>' + JSON.stringify(logs, null, 2) + '</pre>';
+          showResult(content);
+        }, 1000);
+        
+      } catch (error) {
+        showResult(`<h3>测试失败</h3><p>${error.message}</p>`, true);
+      }
+    }
+  </script>
+</body>
+</html>

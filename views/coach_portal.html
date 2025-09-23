@@ -422,24 +422,40 @@
           
           const isCurrentCoach = req.current_coach_id === coachData.id;
           const isNewCoach = req.new_coach_id === coachData.id;
-          const canRespond = req.status === 'pending' || 
-                            (req.status === 'current_coach_approved' && isNewCoach) ||
-                            (req.status === 'new_coach_approved' && isCurrentCoach);
+          
+          // 判断当前教练是否已响应
+          const hasCurrentCoachResponse = req.current_coach_response && req.current_coach_response !== '';
+          const hasNewCoachResponse = req.new_coach_response && req.new_coach_response !== '';
+          
+          // 当前教练是否需要响应
+          const needsCurrentCoachResponse = isCurrentCoach && !hasCurrentCoachResponse;
+          const needsNewCoachResponse = isNewCoach && !hasNewCoachResponse;
+          
+          const canRespond = req.status !== 'rejected' && req.status !== 'completed' && 
+                           ((needsCurrentCoachResponse) || (needsNewCoachResponse));
+          
+          // 获取当前状态说明
+          let statusText = statusMap[req.status] || req.status;
+          if (isCurrentCoach && hasCurrentCoachResponse) {
+            statusText += " (您已响应)";
+          } else if (isNewCoach && hasNewCoachResponse) {
+            statusText += " (您已响应)";
+          }
           
           return `
             <tr>
               <td>${req.id}</td>
               <td>${req.student_name}</td>
-              <td>${req.current_coach_name}</td>
-              <td>${req.new_coach_name}</td>
+              <td>${req.current_coach_name}${isCurrentCoach ? ' (您)' : ''}</td>
+              <td>${req.new_coach_name}${isNewCoach ? ' (您)' : ''}</td>
               <td title="${req.reason}">${req.reason ? req.reason.substring(0, 20) + '...' : '无'}</td>
-              <td><span class="badge ${req.status === 'pending' ? 'badge-warning' : req.status === 'rejected' ? 'badge-danger' : 'badge-info'}">${statusMap[req.status] || req.status}</span></td>
+              <td><span class="badge ${req.status === 'pending' ? 'badge-warning' : req.status === 'rejected' ? 'badge-danger' : req.status.includes('approved') ? 'badge-success' : 'badge-info'}">${statusText}</span></td>
               <td>${new Date(req.created_at).toLocaleString()}</td>
               <td>
                 ${canRespond ? `
                   <button class="btn btn-sm btn-success" onclick="respondToChangeRequest(${req.id}, true, '${isCurrentCoach ? 'current' : 'new'}')">同意</button>
                   <button class="btn btn-sm btn-danger ml-1" onclick="respondToChangeRequest(${req.id}, false, '${isCurrentCoach ? 'current' : 'new'}')">拒绝</button>
-                ` : '无需操作'}
+                ` : (req.status === 'rejected' ? '已拒绝' : req.status === 'completed' ? '已完成' : '已响应')}
               </td>
             </tr>
           `;
@@ -464,7 +480,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: coachData.id,
-            user_type: coachType + '_coach',
+            user_role: 'coach',
             approve: approve,
             response_text: response || ''
           })

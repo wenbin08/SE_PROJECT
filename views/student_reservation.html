@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>课程预约 - 乒乓球培训管理系统</title>
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
   <link rel="stylesheet" href="/css/student.css">
 </head>
 <body>
@@ -137,9 +138,14 @@
 
         <!-- 我的预约 -->
         <div class="card">
-          <div class="card-header">
+          <div class="card-header d-flex justify-content-between align-items-center">
             <h5>我的预约</h5>
-            <div class="btn-group btn-group-sm" role="group">
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadMyReservations('all')">
+              <i class="fas fa-sync-alt"></i> 刷新
+            </button>
+          </div>
+          <div class="card-body pb-0">
+            <div class="btn-group btn-group-sm mb-3" role="group">
               <button type="button" class="btn btn-outline-primary active" onclick="loadMyReservations('all')">全部</button>
               <button type="button" class="btn btn-outline-primary" onclick="loadMyReservations('pending')">待确认</button>
               <button type="button" class="btn btn-outline-primary" onclick="loadMyReservations('confirmed')">已确认</button>
@@ -431,38 +437,72 @@
     
     async function loadMyReservations(status = 'all') {
       try {
+        if (!studentData || !studentData.id) {
+          console.error('学员ID为空，无法加载预约');
+          document.getElementById('myReservationsList').innerHTML = '<tr><td colspan="6" class="text-center text-warning">学员信息未加载，请刷新页面</td></tr>';
+          return;
+        }
+        
         let url = `/api/reservations?student_id=${studentData.id}`;
         if (status !== 'all') {
           url += `&status=${status}`;
         }
         
+        console.log('请求预约数据:', url);
         const res = await fetch(url);
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('API返回错误状态:', res.status, errorText);
+          document.getElementById('myReservationsList').innerHTML = `<tr><td colspan="6" class="text-center text-danger">API错误: ${res.status}</td></tr>`;
+          return;
+        }
+        
         const reservations = await res.json();
+        console.log('获取到预约数据:', reservations);
         
         const tbody = document.getElementById('myReservationsList');
+        if (!Array.isArray(reservations)) {
+          console.error('返回的数据不是数组:', reservations);
+          tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">数据格式错误</td></tr>';
+          return;
+        }
+        
         if (reservations.length === 0) {
           tbody.innerHTML = '<tr><td colspan="6" class="text-center">暂无预约记录</td></tr>';
           return;
         }
         
-        tbody.innerHTML = reservations.map(res => `
+        tbody.innerHTML = reservations.map(res => {
+          let statusDisplay = getStatusBadge(res.status);
+          
+          // 如果有待处理的取消请求，在状态旁显示额外信息
+          if (res.cancel_request_by && res.cancel_request_by !== 'none' && res.status !== 'canceled') {
+            const requestBy = res.cancel_request_by === 'student' ? '您发起' : '教练发起';
+            statusDisplay += ` <span class="badge badge-info">取消申请中(${requestBy})</span>`;
+          }
+          
+          return `
           <tr>
             <td>${res.id}</td>
-            <td>${res.coach_name}</td>
+            <td>${res.coach_name || '未知'}</td>
             <td>${new Date(res.start_time).toLocaleString()}</td>
             <td>${res.table_code || '-'}</td>
-            <td>${getStatusBadge(res.status)}</td>
+            <td>${statusDisplay}</td>
             <td>${getActionButtons(res)}</td>
           </tr>
-        `).join('');
+        `}).join('');
         
         // 更新按钮状态
-        document.querySelectorAll('.btn-group button').forEach(btn => {
-          btn.classList.remove('active');
-        });
-        event.target.classList.add('active');
+        if (typeof event !== 'undefined' && event.target) {
+          document.querySelectorAll('.btn-group button').forEach(btn => {
+            btn.classList.remove('active');
+          });
+          event.target.classList.add('active');
+        }
       } catch (error) {
-        document.getElementById('myReservationsList').innerHTML = '<tr><td colspan="6" class="text-center text-danger">加载失败</td></tr>';
+        console.error('加载预约失败:', error);
+        document.getElementById('myReservationsList').innerHTML = `<tr><td colspan="6" class="text-center text-danger">加载失败: ${error.message}</td></tr>`;
       }
     }
     
@@ -478,15 +518,32 @@
     }
     
     function getActionButtons(reservation) {
-      if (reservation.status === 'confirmed') {
+      // 预约状态为待确认或已确认时才可能显示取消按钮
+      if (reservation.status === 'confirmed' || reservation.status === 'pending') {
         const now = new Date();
         const startTime = new Date(reservation.start_time);
         const timeDiff = startTime - now;
         
-        if (timeDiff > 24 * 3600 * 1000) { // 24小时以上
-          return `<button class="btn btn-sm btn-warning" onclick="cancelReservation(${reservation.id})">取消</button>`;
+        // 距开始时间24小时以上才能取消
+        if (timeDiff > 24 * 3600 * 1000) {
+          // 如果已经有取消请求，并且不是学生发起的，则显示"确认取消"按钮
+          if (reservation.cancel_request_by === 'coach') {
+            return `<button class="btn btn-sm btn-danger" onclick="confirmCancelReservation(${reservation.id})">确认取消</button>`;
+          } 
+          // 如果是学生自己发起的取消，则显示"等待确认"
+          else if (reservation.cancel_request_by === 'student') {
+            return `<span class="badge badge-info">等待教练确认取消</span>`;
+          }
+          // 否则显示正常取消按钮
+          else {
+            return `<button class="btn btn-sm btn-warning" onclick="cancelReservation(${reservation.id})">取消</button>`;
+          }
+        } else {
+          return `<span class="text-muted small">不足24h不可取消</span>`;
         }
       }
+      
+      // 其他状态不显示操作按钮
       return '-';
     }
     
@@ -520,6 +577,31 @@
       }
     }
     
+    async function confirmCancelReservation(id) {
+      if (!confirm('确定要确认取消这个预约吗？确认后预约将被取消且无法恢复。')) return;
+      
+      try {
+        const res = await fetch(`/api/reservations/${id}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ by: 'student', confirm: true })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          alert(data.error || '确认取消失败');
+          return;
+        }
+        
+        alert('预约已成功取消');
+        loadMyReservations('all');
+        loadCancelQuota();
+      } catch (error) {
+        alert('确认取消失败');
+      }
+    }
+    
     function logout() {
       localStorage.removeItem('userData');
       window.location.href = '/';
@@ -533,28 +615,43 @@
     
     // 页面加载时检查登录状态
     window.onload = function() {
-      studentData = JSON.parse(localStorage.getItem('userData') || '{}');
-      if (!studentData.id || studentData.role !== 'student') {
-        alert('请先登录');
-        window.location.href = '/';
-        return;
+      try {
+        const userData = localStorage.getItem('userData');
+        console.log('本地存储的用户数据:', userData);
+        
+        studentData = JSON.parse(userData || '{}');
+        console.log('解析后的学员数据:', studentData);
+        
+        if (!studentData.id || studentData.role !== 'student') {
+          alert('请先登录');
+          window.location.href = '/';
+          return;
+        }
+        
+        document.getElementById('userInfo').textContent = `学员：${studentData.real_name}`;
+        
+        // 设置默认时间（明天9点到10点）
+        const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+        const tomorrowStart = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 9, 0);
+        const tomorrowEnd = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 10, 0);
+        
+        document.getElementById('startTime').value = tomorrowStart.toISOString().slice(0, 16);
+        document.getElementById('endTime').value = tomorrowEnd.toISOString().slice(0, 16);
+        
+        // 加载数据
+        console.log('开始加载学员数据，学员ID:', studentData.id);
+        loadAccountBalance();
+        loadCancelQuota();
+        loadApprovedCoaches();
+        
+        // 确保DOM完全加载后再加载预约
+        setTimeout(() => {
+          loadMyReservations('all');
+        }, 500);
+      } catch (error) {
+        console.error('页面初始化失败:', error);
+        alert('页面加载出错，请刷新重试');
       }
-      
-      document.getElementById('userInfo').textContent = `学员：${studentData.real_name}`;
-      
-      // 设置默认时间（明天9点到10点）
-      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
-      const tomorrowStart = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 9, 0);
-      const tomorrowEnd = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 10, 0);
-      
-      document.getElementById('startTime').value = tomorrowStart.toISOString().slice(0, 16);
-      document.getElementById('endTime').value = tomorrowEnd.toISOString().slice(0, 16);
-      
-      // 加载数据
-      loadAccountBalance();
-      loadCancelQuota();
-      loadApprovedCoaches();
-      loadMyReservations('all');
     };
   </script>
 </body>
