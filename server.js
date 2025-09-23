@@ -1448,42 +1448,21 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
         return;
       }
       
-      // 4. 如果同意，更新响应，但先获取当前状态以决定新的状态
-      db.query(`UPDATE coach_change_request SET ${updateField}=? WHERE id=?`, 
-        [response_text || '同意', id], (err) => {
+      // 4. 如果同意，更新响应并设置对应的状态
+      let newStatus = 'pending'; // 默认状态
+      if (user_role === 'coach') {
+        if (user_id == request.current_coach_id) {
+          newStatus = 'current_coach_approved';
+        } else if (user_id == request.new_coach_id) {
+          newStatus = 'new_coach_approved';
+        }
+      } else if (user_role === 'campus_admin') {
+        newStatus = 'admin_approved';
+      }
+      
+      db.query(`UPDATE coach_change_request SET ${updateField}=?, status=? WHERE id=?`, 
+        [response_text || '同意', newStatus, id], (err) => {
         if (err) return res.status(500).json({ error: '更新失败' });
-        
-        // 重新获取请求以检查两位教练的响应状态
-        db.query(`SELECT * FROM coach_change_request WHERE id=?`, [id], (err, rows) => {
-          if (err) return res.status(500).json({ error: '更新状态失败' });
-          
-          const request = rows[0];
-          const hasCurrentCoachApproval = request.current_coach_response && request.current_coach_response !== '拒绝';
-          const hasNewCoachApproval = request.new_coach_response && request.new_coach_response !== '拒绝';
-          
-          // 根据两位教练的响应情况设置状态
-          let newStatus = 'pending';
-          
-          if (user_role === 'campus_admin') {
-            newStatus = 'admin_approved';
-          } else if (user_role === 'coach') {
-            // 如果两位教练都同意了，使用特殊状态
-            if (hasCurrentCoachApproval && hasNewCoachApproval) {
-              newStatus = 'both_coaches_approved';
-            } 
-            // 否则根据是哪位教练同意来设置状态
-            else if (user_id == request.current_coach_id) {
-              newStatus = 'current_coach_approved';
-            } else if (user_id == request.new_coach_id) {
-              newStatus = 'new_coach_approved';
-            }
-          }
-          
-          console.log(`更新教练更换申请(${id})状态为: ${newStatus}`);
-          
-          // 更新状态
-          db.query(`UPDATE coach_change_request SET status=? WHERE id=?`, [newStatus, id], (err) => {
-            if (err) return res.status(500).json({ error: '更新状态失败' });
         
         // 获取更新后的申请状态
         db.query(`SELECT * FROM coach_change_request WHERE id=?`, [id], (err, updated) => {
@@ -1508,7 +1487,7 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
           if (hasCurrentCoachApproval && hasNewCoachApproval && hasAdminApproval) {
             console.log('三方均已同意，执行教练更换');
             // 执行教练更换
-            executeCoachChange(req.student_id, req.current_coach_id, req.new_coach_id, id, res);
+            executeCoachChangeAfterApproval(req.student_id, req.current_coach_id, req.new_coach_id, id, res);
           } else {
             // 发送进度消息给学员
             const approvalStatus = [];
@@ -1530,8 +1509,8 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
   });
 });
 
-// 执行教练更换
-function executeCoachChange(studentId, currentCoachId, newCoachId, requestId, res) {
+// 执行教练更换（三方同意后）
+function executeCoachChangeAfterApproval(studentId, currentCoachId, newCoachId, requestId, res) {
   // 1. 更新coach_student表
   db.query(`UPDATE coach_student SET coach_id=? WHERE student_id=? AND coach_id=? AND status='approved'`, 
     [newCoachId, studentId, currentCoachId], (err) => {
