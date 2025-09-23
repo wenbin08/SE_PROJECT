@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>测试超级管理员</title>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+  <div class="container mt-5">
+    <h2>超级管理员测试页面</h2>
+    
+    <div class="card mt-4">
+      <div class="card-body">
+        <h5>设置超级管理员身份</h5>
+        <button class="btn btn-primary" onclick="setSuperAdminData()">设置超级管理员数据</button>
+        <button class="btn btn-success ml-2" onclick="goToSuperAdmin()">进入超级管理员页面</button>
+        <button class="btn btn-warning ml-2" onclick="clearData()">清除数据</button>
+      </div>
+    </div>
+    
+    <div class="card mt-4">
+      <div class="card-body">
+        <h5>当前localStorage数据</h5>
+        <pre id="localStorageData" class="bg-light p-3">无数据</pre>
+        <button class="btn btn-info" onclick="checkLocalStorage()">检查数据</button>
+      </div>
+    </div>
+    
+    <div class="card mt-4">
+      <div class="card-body">
+        <h5>API测试</h5>
+        <button class="btn btn-primary" onclick="testCampusAPI()">测试校区API</button>
+        <button class="btn btn-success ml-2" onclick="testStatsAPI()">测试统计API</button>
+        <div id="apiResult" class="mt-3"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function setSuperAdminData() {
+      const userData = {
+        id: 1,
+        username: 'superadmin',
+        real_name: '超级管理员',
+        role: 'super_admin',
+        campus_id: null
+      };
+      
+      localStorage.setItem('userData', JSON.stringify(userData));
+      alert('超级管理员数据已设置');
+      checkLocalStorage();
+    }
+    
+    function goToSuperAdmin() {
+      window.location.href = '/views/super_admin.html';
+    }
+    
+    function clearData() {
+      localStorage.clear();
+      alert('数据已清除');
+      checkLocalStorage();
+    }
+    
+    function checkLocalStorage() {
+      const userData = localStorage.getItem('userData');
+      document.getElementById('localStorageData').textContent = userData || '无数据';
+    }
+    
+    async function testCampusAPI() {
+      try {
+        const response = await fetch('/api/campuses');
+        const data = await response.json();
+        
+        document.getElementById('apiResult').innerHTML = `
+          <h6>校区API测试结果:</h6>
+          <pre class="bg-light p-2">${JSON.stringify(data, null, 2)}</pre>
+        `;
+      } catch (error) {
+        document.getElementById('apiResult').innerHTML = `
+          <div class="alert alert-danger">校区API错误: ${error.message}</div>
+        `;
+      }
+    }
+    
+    async function testStatsAPI() {
+      try {
+        const response = await fetch('/api/super-admin/statistics');
+        const data = await response.json();
+        
+        document.getElementById('apiResult').innerHTML = `
+          <h6>统计API测试结果:</h6>
+          <pre class="bg-light p-2">${JSON.stringify(data, null, 2)}</pre>
+        `;
+      } catch (error) {
+        document.getElementById('apiResult').innerHTML = `
+          <div class="alert alert-danger">统计API错误: ${error.message}</div>
+        `;
+      }
+    }
+    
+    // 页面加载时检查数据
+    window.onload = function() {
+      checkLocalStorage();
+    };
+  </script>
+</body>
+</html>

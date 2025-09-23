@@ -121,14 +121,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// 通用：列出校区
-app.get('/api/campuses', (req, res) => {
-  db.query('SELECT id, name FROM campus', (err, results) => {
-    if (err) return res.status(500).json({ error: '查询失败' });
-    res.json(results);
-  });
-});
-
 // 用户注册（学员）
 app.post('/api/register/student', (req, res) => {
   const { username, password, real_name, gender, age, campus_id, phone, email } = req.body;
@@ -3335,7 +3327,7 @@ app.post('/api/license/activate', (req, res) => {
 // 续费授权
 app.post('/api/license/renew', (req, res) => {
   const { payment_amount } = req.body;
-  const annualFee = 5000; // 年费5000元
+  const annualFee = 500; // 年费500元
   
   if (payment_amount !== annualFee) {
     return res.status(400).json({ error: `授权年费为${annualFee}元` });
@@ -4112,6 +4104,149 @@ function getStatusText(status) {
   return statusMap[status] || status;
 }
 
+// ==================== 超级管理员 API ====================
+
+// 获取校区列表
+app.get('/api/campuses', (req, res) => {
+  const sql = `
+    SELECT c.*, COUNT(u.id) as user_count 
+    FROM campus c 
+    LEFT JOIN user u ON c.id = u.campus_id 
+    GROUP BY c.id 
+    ORDER BY c.id
+  `;
+  db.query(sql, (err, results) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    res.json(results);
+  });
+});
+
+// 添加校区
+app.post('/api/campuses', (req, res) => {
+  const { name, address, contact_name, contact_phone, contact_email } = req.body;
+  if (!name) return res.status(400).json({ error: '校区名称不能为空' });
+  
+  const sql = 'INSERT INTO campus (name, address, contact_name, contact_phone, contact_email) VALUES (?, ?, ?, ?, ?)';
+  db.query(sql, [name, address, contact_name, contact_phone, contact_email], (err, result) => {
+    if (err) return res.status(500).json({ error: '添加失败' });
+    res.json({ success: true, campus_id: result.insertId });
+  });
+});
+
+// 超级管理员统计数据
+app.get('/api/super-admin/statistics', (req, res) => {
+  const queries = {
+    total_campuses: 'SELECT COUNT(*) as count FROM campus',
+    total_users: 'SELECT COUNT(*) as count FROM user',
+    total_coaches: 'SELECT COUNT(*) as count FROM user WHERE role="coach"',
+    total_students: 'SELECT COUNT(*) as count FROM user WHERE role="student"',
+    campus_distribution: `
+      SELECT c.name as campus_name, COUNT(u.id) as user_count 
+      FROM campus c 
+      LEFT JOIN user u ON c.id = u.campus_id 
+      GROUP BY c.id, c.name 
+      ORDER BY user_count DESC
+    `
+  };
+  
+  Promise.all([
+    new Promise((resolve, reject) => db.query(queries.total_campuses, (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.total_users, (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.total_coaches, (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.total_students, (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.campus_distribution, (err, rows) => err ? reject(err) : resolve(rows)))
+  ]).then(results => {
+    const campusData = results[4];
+    const data = {
+      total_campuses: results[0],
+      total_users: results[1],
+      total_coaches: results[2],
+      total_students: results[3],
+      campus_distribution: {
+        labels: campusData.map(row => row.campus_name),
+        values: campusData.map(row => row.user_count)
+      }
+    };
+    
+    res.json(data);
+  }).catch(err => {
+    console.error('统计查询失败:', err);
+    res.status(500).json({ error: '统计查询失败' });
+  });
+});
+
+// 超级管理员获取所有用户
+app.get('/api/super-admin/users', (req, res) => {
+  const sql = `
+    SELECT u.*, c.name as campus_name 
+    FROM user u 
+    LEFT JOIN campus c ON u.campus_id = c.id 
+    ORDER BY u.created_at DESC
+  `;
+  db.query(sql, (err, results) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    res.json(results);
+  });
+});
+
+// ==================== 自动提醒系统 ====================
+
+// 课前1小时提醒
+function sendClassReminders() {
+  const now = new Date();
+  const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+  
+  // 查询1小时内即将开始的课程
+  const sql = `
+    SELECT r.*, 
+           s.real_name as student_name, s.phone as student_phone,
+           c.real_name as coach_name, c.phone as coach_phone,
+           tc.code as table_code
+    FROM reservation r
+    JOIN user s ON r.student_id = s.id
+    JOIN user c ON r.coach_id = c.id
+    LEFT JOIN table_court tc ON r.table_id = tc.id
+    WHERE r.status = 'confirmed' 
+    AND r.start_time BETWEEN ? AND ?
+    AND r.reminded = 0
+  `;
+  
+  db.query(sql, [now, oneHourLater], (err, reservations) => {
+    if (err) {
+      console.error('查询即将开始的课程失败:', err);
+      return;
+    }
+    
+    reservations.forEach(reservation => {
+      const startTime = new Date(reservation.start_time);
+      const timeStr = startTime.toLocaleString('zh-CN');
+      const tableInfo = reservation.table_code ? `球台：${reservation.table_code}` : '球台：待分配';
+      
+      // 给学员发送提醒
+      const studentMessage = `课程提醒：您预约的课程将于${timeStr}开始，教练：${reservation.coach_name}，${tableInfo}，请提前10分钟到达。`;
+      sendMessage(reservation.student_id, '课程提醒', studentMessage);
+      
+      // 给教练发送提醒
+      const coachMessage = `课程提醒：您的课程将于${timeStr}开始，学员：${reservation.student_name}，${tableInfo}，请提前5分钟到达。`;
+      sendMessage(reservation.coach_id, '课程提醒', coachMessage);
+      
+      // 标记已提醒
+      db.query('UPDATE reservation SET reminded = 1 WHERE id = ?', [reservation.id], (updateErr) => {
+        if (updateErr) {
+          console.error('更新提醒状态失败:', updateErr);
+        }
+      });
+    });
+    
+    if (reservations.length > 0) {
+      console.log(`发送了${reservations.length}个课程提醒`);
+    }
+  });
+}
+
+// 每30秒检查一次课程提醒
+setInterval(sendClassReminders, 30000);
+
 // 检查授权状态中间件
 function checkLicense(req, res, next) {
   // 跳过授权相关的API
@@ -4141,7 +4276,7 @@ function checkLicense(req, res, next) {
 // app.use('/api/', checkLicense);
 
 // 启动服务器
-const port = process.env.PORT || 3001; // 避免和 old_project 冲突
+const port = process.env.PORT || 3000; // 使用3000端口
 app.listen(port, () => {
   console.log(`乒乓球培训管理系统服务已在端口 ${port} 运行`);
 });

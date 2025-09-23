@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS reservation (
   cancel_request_by ENUM('student','coach', 'none') DEFAULT 'none',
   cancel_count_month_student INT DEFAULT 0,
   cancel_count_month_coach INT DEFAULT 0,
+  reminded TINYINT(1) DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (campus_id) REFERENCES campus(id),
   FOREIGN KEY (coach_id) REFERENCES user(id),

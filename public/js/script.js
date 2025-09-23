@@ -18,7 +18,8 @@ document.addEventListener("DOMContentLoaded", function () {
           localStorage.setItem('user', JSON.stringify(info));
           if (info.role === 'student') window.location.href = `student_reservation.html?student_id=${info.id}`;
           else if (info.role === 'coach') window.location.href = `coach_portal.html?coach_id=${info.id}`;
-          else if (info.role === 'campus_admin' || info.role === 'super_admin') window.location.href = 'campus_admin.html';
+          else if (info.role === 'super_admin') window.location.href = 'super_admin.html';
+          else if (info.role === 'campus_admin') window.location.href = 'campus_admin.html';
           else alert('未知角色，无法跳转');
         } else {
           alert(data.error || data.message || '登录失败');

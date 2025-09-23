@@ -18,7 +18,11 @@
         <form id="studentForm">
           <div class="form-row">
             <div class="form-group col-md-6"><label>用户名</label><input class="form-control" id="s_username" required></div>
-            <div class="form-group col-md-6"><label>密码</label><input type="password" class="form-control" id="s_password" required placeholder="请输入密码"></div>
+            <div class="form-group col-md-6">
+              <label>密码</label>
+              <input type="password" class="form-control" id="s_password" required placeholder="8-16位，包含字母、数字、特殊字符">
+              <small id="s_password_help" class="form-text text-muted">密码必须8-16位，包含字母、数字和特殊字符</small>
+            </div>
           </div>
           <div class="form-row">
             <div class="form-group col-md-6"><label>姓名</label><input class="form-control" id="s_realname" required></div>
@@ -37,7 +41,11 @@
         <form id="coachForm">
           <div class="form-row">
             <div class="form-group col-md-6"><label>用户名</label><input class="form-control" id="c_username" required></div>
-            <div class="form-group col-md-6"><label>密码</label><input type="password" class="form-control" id="c_password" required placeholder="请输入密码"></div>
+            <div class="form-group col-md-6">
+              <label>密码</label>
+              <input type="password" class="form-control" id="c_password" required placeholder="8-16位，包含字母、数字、特殊字符">
+              <small id="c_password_help" class="form-text text-muted">密码必须8-16位，包含字母、数字和特殊字符</small>
+            </div>
           </div>
           <div class="form-row">
             <div class="form-group col-md-6"><label>姓名</label><input class="form-control" id="c_realname" required></div>
@@ -73,8 +81,16 @@
     function strong(p){return p && p.length>=8 && p.length<=16 && /[A-Za-z]/.test(p) && /\d/.test(p) && /[^A-Za-z0-9]/.test(p);}
     document.getElementById('studentForm').addEventListener('submit', async (e)=>{
       e.preventDefault();
+      
+      // 验证密码强度
+      const password = s_password.value.trim();
+      if (!strong(password)) {
+        alert('密码不符合要求：必须8-16位，包含字母、数字和特殊字符');
+        return;
+      }
+      
       const payload = {
-        username: s_username.value.trim(), password: s_password.value.trim(), real_name: s_realname.value.trim(),
+        username: s_username.value.trim(), password: password, real_name: s_realname.value.trim(),
         gender: s_gender.value, age: s_age.value? parseInt(s_age.value): null, campus_id: parseInt(s_campus.value),
         phone: s_phone.value.trim(), email: s_email.value.trim()||null
       };
@@ -84,8 +100,16 @@
     });
     document.getElementById('coachForm').addEventListener('submit', async (e)=>{
       e.preventDefault();
+      
+      // 验证密码强度
+      const password = c_password.value.trim();
+      if (!strong(password)) {
+        alert('密码不符合要求：必须8-16位，包含字母、数字和特殊字符');
+        return;
+      }
+      
       const payload = {
-        username: c_username.value.trim(), password: c_password.value.trim(), real_name: c_realname.value.trim(),
+        username: c_username.value.trim(), password: password, real_name: c_realname.value.trim(),
         gender: c_gender.value, age: c_age.value? parseInt(c_age.value): null, campus_id: parseInt(c_campus.value),
         phone: c_phone.value.trim(), email: c_email.value.trim()||null, coach_level: c_level.value, coach_awards: c_awards.value.trim()
       };
