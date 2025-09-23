@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>月赛管理 - 校区管理员</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+  <div class="container-fluid">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <a class="navbar-brand" href="#">乒乓球培训管理系统</a>
+      <div class="navbar-nav ml-auto">
+        <span class="navbar-text" id="userInfo">校区管理员</span>
+        <a class="nav-link" href="/" onclick="logout()">退出</a>
+      </div>
+    </nav>
+
+    <div class="row mt-3">
+      <div class="col-md-3">
+        <div class="list-group">
+          <a href="/campus_admin.html" class="list-group-item list-group-item-action">管理首页</a>
+          <a href="/admin_approve.html" class="list-group-item list-group-item-action">教练审核</a>
+          <a href="/admin_users.html" class="list-group-item list-group-item-action">用户管理</a>
+          <a href="/admin_reservations.html" class="list-group-item list-group-item-action">预约管理</a>
+          <a href="/admin_tournament.html" class="list-group-item list-group-item-action active">月赛管理</a>
+          <a href="/admin_finance.html" class="list-group-item list-group-item-action">财务管理</a>
+          <a href="/admin_statistics.html" class="list-group-item list-group-item-action">统计报表</a>
+        </div>
+      </div>
+      
+      <div class="col-md-9">
+        <!-- 月赛概览 -->
+        <div class="card mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5>月赛管理</h5>
+            <button class="btn btn-primary" onclick="createTournament()">创建新月赛</button>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-3">
+                <div class="card text-white bg-info">
+                  <div class="card-body text-center">
+                    <h5>本月赛事</h5>
+                    <h3 id="currentMonthTournaments">-</h3>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card text-white bg-success">
+                  <div class="card-body text-center">
+                    <h5>报名人数</h5>
+                    <h3 id="totalRegistrations">-</h3>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card text-white bg-warning">
+                  <div class="card-body text-center">
+                    <h5>进行中</h5>
+                    <h3 id="activeTournaments">-</h3>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card text-white bg-secondary">
+                  <div class="card-body text-center">
+                    <h5>已完成</h5>
+                    <h3 id="completedTournaments">-</h3>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 月赛列表 -->
+        <div class="card">
+          <div class="card-header">
+            <h5>月赛列表</h5>
+          </div>
+          <div class="card-body">
+            <!-- 筛选条件 -->
+            <div class="row mb-3">
+              <div class="col-md-3">
+                <select id="statusFilter" class="form-control" onchange="loadTournaments()">
+                  <option value="">所有状态</option>
+                  <option value="registration">报名中</option>
+                  <option value="in_progress">进行中</option>
+                  <option value="completed">已完成</option>
+                  <option value="cancelled">已取消</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <select id="groupFilter" class="form-control" onchange="loadTournaments()">
+                  <option value="">所有组别</option>
+                  <option value="甲">甲组</option>
+                  <option value="乙">乙组</option>
+                  <option value="丙">丙组</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <input type="month" id="monthFilter" class="form-control" onchange="loadTournaments()">
+              </div>
+            </div>
+
+            <!-- 赛事列表 -->
+            <div class="table-responsive">
+              <table class="table table-striped table-hover">
+                <thead class="thead-dark">
+                  <tr>
+                    <th>赛事ID</th>
+                    <th>名称</th>
+                    <th>组别</th>
+                    <th>比赛日期</th>
+                    <th>报名人数</th>
+                    <th>状态</th>
+                    <th>创建时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="tournamentTableBody">
+                  <tr>
+                    <td colspan="8" class="text-center">正在加载...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 创建月赛模态框 -->
+  <div class="modal fade" id="createTournamentModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">创建新月赛</h5>
+          <button type="button" class="close" data-dismiss="modal">
+            <span>&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <form id="createTournamentForm">
+            <div class="form-group">
+              <label>赛事名称</label>
+              <input type="text" class="form-control" id="tournamentName" required>
+              <small class="form-text text-muted">例如：2024年9月乒乓球月赛</small>
+            </div>
+            
+            <div class="form-group">
+              <label>组别</label>
+              <select class="form-control" id="tournamentGroup" required>
+                <option value="甲">甲组</option>
+                <option value="乙">乙组</option>
+                <option value="丙">丙组</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label>比赛日期</label>
+              <input type="date" class="form-control" id="tournamentDate" required>
+              <small class="form-text text-muted">建议选择每月第四个星期天</small>
+            </div>
+            
+            <div class="form-group">
+              <label>报名截止日期</label>
+              <input type="date" class="form-control" id="registrationDeadline" required>
+            </div>
+            
+            <div class="form-group">
+              <label>报名费 (元)</label>
+              <input type="number" class="form-control" id="registrationFee" value="30" min="0" step="0.01" required>
+            </div>
+            
+            <div class="form-group">
+              <label>比赛描述</label>
+              <textarea class="form-control" id="tournamentDescription" rows="3" placeholder="比赛规则、奖励等描述"></textarea>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" onclick="saveTournament()">创建赛事</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 赛事详情模态框 -->
+  <div class="modal fade" id="tournamentDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="tournamentDetailTitle">赛事详情</h5>
+          <button type="button" class="close" data-dismiss="modal">
+            <span>&times;</span>
+          </button>
+        </div>
+        <div class="modal-body" id="tournamentDetailContent">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+          <button type="button" class="btn btn-warning" id="generateScheduleBtn" style="display: none;" onclick="generateSchedule()">生成赛程</button>
+          <button type="button" class="btn btn-success" id="startTournamentBtn" style="display: none;" onclick="startTournament()">开始比赛</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 赛程安排模态框 -->
+  <div class="modal fade" id="scheduleModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">赛程安排</h5>
+          <button type="button" class="close" data-dismiss="modal">
+            <span>&times;</span>
+          </button>
+        </div>
+        <div class="modal-body" id="scheduleContent">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+          <button type="button" class="btn btn-primary" onclick="saveSchedule()">保存赛程</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  <script>
+    let adminData = {};
+    let currentTournamentId = null;
+
+    // 页面加载
+    window.onload = function() {
+      adminData = JSON.parse(localStorage.getItem('userData') || '{}');
+      if (!adminData.id || adminData.role !== 'campus_admin') {
+        alert('请先登录');
+        window.location.href = '/';
+        return;
+      }
+      
+      document.getElementById('userInfo').textContent = `校区管理员：${adminData.real_name}`;
+      
+      // 设置默认月份为当前月份
+      const now = new Date();
+      document.getElementById('monthFilter').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
+      loadTournaments();
+      loadStatistics();
+    };
+
+    // 加载月赛列表
+    async function loadTournaments() {
+      try {
+        const status = document.getElementById('statusFilter').value;
+        const group = document.getElementById('groupFilter').value;
+        const month = document.getElementById('monthFilter').value;
+        
+        let url = `/api/admin/tournaments?campus_id=${adminData.campus_id}`;
+        if (status) url += `&status=${status}`;
+        if (group) url += `&group=${group}`;
+        if (month) url += `&month=${month}`;
+        
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '加载失败');
+        }
+        
+        displayTournaments(data.tournaments);
+      } catch (error) {
+        console.error('加载月赛失败:', error);
+        document.getElementById('tournamentTableBody').innerHTML = 
+          '<tr><td colspan="8" class="text-center text-danger">加载失败</td></tr>';
+      }
+    }
+
+    // 显示月赛列表
+    function displayTournaments(tournaments) {
+      const tbody = document.getElementById('tournamentTableBody');
+      
+      if (!tournaments || tournaments.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">暂无数据</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = tournaments.map(tournament => `
+        <tr>
+          <td>${tournament.id}</td>
+          <td>${tournament.name}</td>
+          <td><span class="badge badge-info">${tournament.group_category}</span></td>
+          <td>${new Date(tournament.tournament_date).toLocaleDateString()}</td>
+          <td>${tournament.registration_count || 0}</td>
+          <td>
+            <span class="badge badge-${getStatusBadge(tournament.status)}">
+              ${getStatusText(tournament.status)}
+            </span>
+          </td>
+          <td>${new Date(tournament.created_at).toLocaleDateString()}</td>
+          <td>
+            <button class="btn btn-sm btn-outline-info" onclick="viewTournamentDetail(${tournament.id})">详情</button>
+            ${tournament.status === 'registration' ? 
+              `<button class="btn btn-sm btn-outline-warning" onclick="editTournament(${tournament.id})">编辑</button>
+               <button class="btn btn-sm btn-outline-danger" onclick="cancelTournament(${tournament.id})">取消</button>` : ''
+            }
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // 加载统计数据
+    async function loadStatistics() {
+      try {
+        const now = new Date();
+        const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        
+        const res = await fetch(`/api/admin/tournament-stats?campus_id=${adminData.campus_id}&month=${month}`);
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+          document.getElementById('currentMonthTournaments').textContent = data.stats.current_month || 0;
+          document.getElementById('totalRegistrations').textContent = data.stats.total_registrations || 0;
+          document.getElementById('activeTournaments').textContent = data.stats.active || 0;
+          document.getElementById('completedTournaments').textContent = data.stats.completed || 0;
+        }
+      } catch (error) {
+        console.error('加载统计数据失败:', error);
+      }
+    }
+
+    // 创建月赛
+    function createTournament() {
+      document.getElementById('createTournamentForm').reset();
+      
+      // 设置默认比赛日期为本月第四个星期天
+      const now = new Date();
+      const fourthSunday = getFourthSunday(now.getFullYear(), now.getMonth());
+      document.getElementById('tournamentDate').value = fourthSunday.toISOString().split('T')[0];
+      
+      // 设置默认报名截止日期为比赛前一周
+      const deadline = new Date(fourthSunday);
+      deadline.setDate(deadline.getDate() - 7);
+      document.getElementById('registrationDeadline').value = deadline.toISOString().split('T')[0];
+      
+      $('#createTournamentModal').modal('show');
+    }
+
+    // 获取某月第四个星期天
+    function getFourthSunday(year, month) {
+      const firstDay = new Date(year, month, 1);
+      const firstSunday = new Date(firstDay);
+      firstSunday.setDate(1 + (7 - firstDay.getDay()) % 7);
+      
+      const fourthSunday = new Date(firstSunday);
+      fourthSunday.setDate(firstSunday.getDate() + 21);
+      
+      return fourthSunday;
+    }
+
+    // 保存月赛
+    async function saveTournament() {
+      const formData = {
+        name: document.getElementById('tournamentName').value.trim(),
+        group_category: document.getElementById('tournamentGroup').value,
+        tournament_date: document.getElementById('tournamentDate').value,
+        registration_deadline: document.getElementById('registrationDeadline').value,
+        registration_fee: parseFloat(document.getElementById('registrationFee').value),
+        description: document.getElementById('tournamentDescription').value.trim(),
+        campus_id: adminData.campus_id
+      };
+      
+      if (!formData.name || !formData.tournament_date || !formData.registration_deadline) {
+        alert('请填写所有必填字段');
+        return;
+      }
+      
+      try {
+        const res = await fetch('/api/admin/tournament', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '创建失败');
+        }
+        
+        alert('月赛创建成功');
+        $('#createTournamentModal').modal('hide');
+        loadTournaments();
+        loadStatistics();
+      } catch (error) {
+        alert('创建失败：' + error.message);
+      }
+    }
+
+    // 查看月赛详情
+    async function viewTournamentDetail(id) {
+      try {
+        currentTournamentId = id;
+        
+        const res = await fetch(`/api/admin/tournament/${id}`);
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '获取详情失败');
+        }
+        
+        const tournament = data.tournament;
+        const registrations = data.registrations || [];
+        
+        document.getElementById('tournamentDetailTitle').textContent = tournament.name;
+        
+        let content = `
+          <div class="row">
+            <div class="col-md-6">
+              <h6>基本信息</h6>
+              <p><strong>赛事名称:</strong> ${tournament.name}</p>
+              <p><strong>组别:</strong> <span class="badge badge-info">${tournament.group_category}</span></p>
+              <p><strong>状态:</strong> <span class="badge badge-${getStatusBadge(tournament.status)}">${getStatusText(tournament.status)}</span></p>
+              <p><strong>比赛日期:</strong> ${new Date(tournament.tournament_date).toLocaleDateString()}</p>
+              <p><strong>报名截止:</strong> ${new Date(tournament.registration_deadline).toLocaleDateString()}</p>
+              <p><strong>报名费:</strong> ￥${tournament.registration_fee}</p>
+            </div>
+            <div class="col-md-6">
+              <h6>参赛信息</h6>
+              <p><strong>报名人数:</strong> ${registrations.length}</p>
+              <p><strong>创建时间:</strong> ${new Date(tournament.created_at).toLocaleString()}</p>
+              ${tournament.description ? `<p><strong>比赛描述:</strong> ${tournament.description}</p>` : ''}
+            </div>
+          </div>
+        `;
+        
+        if (registrations.length > 0) {
+          content += `
+            <hr>
+            <h6>参赛选手</h6>
+            <div class="table-responsive">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>选手姓名</th>
+                    <th>性别</th>
+                    <th>年龄</th>
+                    <th>报名时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${registrations.map(reg => `
+                    <tr>
+                      <td>${reg.student_name}</td>
+                      <td>${reg.gender || '-'}</td>
+                      <td>${reg.age || '-'}</td>
+                      <td>${new Date(reg.created_at).toLocaleString()}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+        
+        document.getElementById('tournamentDetailContent').innerHTML = content;
+        
+        // 显示相应的操作按钮
+        document.getElementById('generateScheduleBtn').style.display = 
+          (tournament.status === 'registration' && registrations.length > 0) ? 'inline-block' : 'none';
+        document.getElementById('startTournamentBtn').style.display = 
+          (tournament.status === 'scheduled') ? 'inline-block' : 'none';
+        
+        $('#tournamentDetailModal').modal('show');
+      } catch (error) {
+        alert('获取详情失败：' + error.message);
+      }
+    }
+
+    // 生成赛程
+    async function generateSchedule() {
+      if (!currentTournamentId) return;
+      
+      try {
+        const res = await fetch(`/api/admin/tournament/${currentTournamentId}/schedule`, {
+          method: 'POST'
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '生成赛程失败');
+        }
+        
+        // 显示生成的赛程
+        displaySchedule(data.schedule);
+        $('#tournamentDetailModal').modal('hide');
+        $('#scheduleModal').modal('show');
+      } catch (error) {
+        alert('生成赛程失败：' + error.message);
+      }
+    }
+
+    // 显示赛程
+    function displaySchedule(schedule) {
+      let content = '<h6>比赛赛程</h6>';
+      
+      schedule.rounds.forEach((round, roundIndex) => {
+        content += `
+          <div class="card mt-3">
+            <div class="card-header">
+              <strong>第${roundIndex + 1}轮</strong>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>场次</th>
+                      <th>选手1</th>
+                      <th>VS</th>
+                      <th>选手2</th>
+                      <th>球台</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${round.matches.map((match, matchIndex) => `
+                      <tr>
+                        <td>第${matchIndex + 1}场</td>
+                        <td>${match.player1_name}</td>
+                        <td class="text-center">VS</td>
+                        <td>${match.player2_name}</td>
+                        <td>${match.table_code || '待分配'}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+      
+      document.getElementById('scheduleContent').innerHTML = content;
+    }
+
+    // 保存赛程
+    async function saveSchedule() {
+      if (!currentTournamentId) return;
+      
+      try {
+        const res = await fetch(`/api/admin/tournament/${currentTournamentId}/confirm-schedule`, {
+          method: 'POST'
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '保存赛程失败');
+        }
+        
+        alert('赛程已保存，比赛状态已更新');
+        $('#scheduleModal').modal('hide');
+        loadTournaments();
+      } catch (error) {
+        alert('保存赛程失败：' + error.message);
+      }
+    }
+
+    // 开始比赛
+    async function startTournament() {
+      if (!currentTournamentId) return;
+      
+      if (!confirm('确定开始比赛吗？开始后将无法修改赛程。')) return;
+      
+      try {
+        const res = await fetch(`/api/admin/tournament/${currentTournamentId}/start`, {
+          method: 'POST'
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '开始比赛失败');
+        }
+        
+        alert('比赛已开始');
+        $('#tournamentDetailModal').modal('hide');
+        loadTournaments();
+      } catch (error) {
+        alert('开始比赛失败：' + error.message);
+      }
+    }
+
+    // 取消月赛
+    async function cancelTournament(id) {
+      const reason = prompt('请输入取消原因：');
+      if (!reason) return;
+      
+      if (!confirm('确定要取消这个月赛吗？已报名的学员将收到退款。')) return;
+      
+      try {
+        const res = await fetch(`/api/admin/tournament/${id}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '取消失败');
+        }
+        
+        alert('月赛已取消');
+        loadTournaments();
+        loadStatistics();
+      } catch (error) {
+        alert('取消失败：' + error.message);
+      }
+    }
+
+    // 获取状态徽章样式
+    function getStatusBadge(status) {
+      switch(status) {
+        case 'registration': return 'success';
+        case 'scheduled': return 'warning';
+        case 'in_progress': return 'info';
+        case 'completed': return 'secondary';
+        case 'cancelled': return 'danger';
+        default: return 'light';
+      }
+    }
+
+    // 获取状态文本
+    function getStatusText(status) {
+      switch(status) {
+        case 'registration': return '报名中';
+        case 'scheduled': return '已安排';
+        case 'in_progress': return '进行中';
+        case 'completed': return '已完成';
+        case 'cancelled': return '已取消';
+        default: return '未知';
+      }
+    }
+
+    // 退出登录
+    function logout() {
+      localStorage.removeItem('userData');
+      window.location.href = '/';
+    }
+  </script>
+</body>
+</html>

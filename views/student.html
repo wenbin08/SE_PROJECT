@@ -277,10 +277,10 @@
 
       try {
         // 加载教练数量
-        const coachRes = await fetch(`/api/student/coaches?student_id=${currentUser.id}`);
+        const coachRes = await fetch(`/api/student/approved-coaches?student_id=${currentUser.id}`);
         if (coachRes.ok) {
           const coachData = await coachRes.json();
-          document.getElementById('coachCount').textContent = (coachData.coaches || []).length;
+          document.getElementById('coachCount').textContent = (coachData || []).length;
         }
 
         // 加载本月预约数量

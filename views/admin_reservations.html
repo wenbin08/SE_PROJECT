@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>预约管理 - 校区管理员</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+  <div class="container-fluid">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <a class="navbar-brand" href="#">乒乓球培训管理系统</a>
+      <div class="navbar-nav ml-auto">
+        <span class="navbar-text" id="userInfo">校区管理员</span>
+        <a class="nav-link" href="/" onclick="logout()">退出</a>
+      </div>
+    </nav>
+
+    <div class="row mt-3">
+      <div class="col-md-3">
+        <div class="list-group">
+          <a href="/campus_admin.html" class="list-group-item list-group-item-action">管理首页</a>
+          <a href="/admin_approve.html" class="list-group-item list-group-item-action">教练审核</a>
+          <a href="/admin_users.html" class="list-group-item list-group-item-action">用户管理</a>
+          <a href="/admin_reservations.html" class="list-group-item list-group-item-action active">预约管理</a>
+          <a href="/admin_finance.html" class="list-group-item list-group-item-action">财务管理</a>
+          <a href="/admin_statistics.html" class="list-group-item list-group-item-action">统计报表</a>
+        </div>
+      </div>
+      
+      <div class="col-md-9">
+        <div class="card">
+          <div class="card-header">
+            <h5>预约管理</h5>
+          </div>
+          <div class="card-body">
+            <!-- 筛选条件 -->
+            <div class="row mb-3">
+              <div class="col-md-3">
+                <select id="statusFilter" class="form-control" onchange="loadReservations()">
+                  <option value="">所有状态</option>
+                  <option value="pending">待确认</option>
+                  <option value="confirmed">已确认</option>
+                  <option value="completed">已完成</option>
+                  <option value="cancelled">已取消</option>
+                  <option value="rejected">已拒绝</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <input type="date" id="dateFilter" class="form-control" onchange="loadReservations()">
+              </div>
+              <div class="col-md-3">
+                <input type="text" id="searchKeyword" class="form-control" placeholder="搜索学员或教练">
+              </div>
+              <div class="col-md-3">
+                <button class="btn btn-primary" onclick="searchReservations()">搜索</button>
+                <button class="btn btn-secondary ml-2" onclick="resetFilters()">重置</button>
+              </div>
+            </div>
+
+            <!-- 统计信息 -->
+            <div class="row mb-3">
+              <div class="col-md-3">
+                <div class="card text-white bg-info">
+                  <div class="card-body text-center">
+                    <h5>今日预约</h5>
+                    <h3 id="todayCount">-</h3>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card text-white bg-warning">
+                  <div class="card-body text-center">
+                    <h5>待确认</h5>
+                    <h3 id="pendingCount">-</h3>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card text-white bg-success">
+                  <div class="card-body text-center">
+                    <h5>已确认</h5>
+                    <h3 id="confirmedCount">-</h3>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card text-white bg-secondary">
+                  <div class="card-body text-center">
+                    <h5>本周总计</h5>
+                    <h3 id="weeklyCount">-</h3>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 预约列表 -->
+            <div class="table-responsive">
+              <table class="table table-striped table-hover">
+                <thead class="thead-dark">
+                  <tr>
+                    <th>预约ID</th>
+                    <th>学员</th>
+                    <th>教练</th>
+                    <th>上课时间</th>
+                    <th>时长(小时)</th>
+                    <th>球台</th>
+                    <th>状态</th>
+                    <th>费用</th>
+                    <th>预约时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="reservationTableBody">
+                  <tr>
+                    <td colspan="10" class="text-center">正在加载...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 分页 -->
+            <nav aria-label="预约列表分页">
+              <ul class="pagination justify-content-center" id="pagination">
+              </ul>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 预约详情模态框 -->
+  <div class="modal fade" id="reservationDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">预约详情</h5>
+          <button type="button" class="close" data-dismiss="modal">
+            <span>&times;</span>
+          </button>
+        </div>
+        <div class="modal-body" id="reservationDetailContent">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑预约模态框 -->
+  <div class="modal fade" id="editReservationModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">编辑预约</h5>
+          <button type="button" class="close" data-dismiss="modal">
+            <span>&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <form id="editReservationForm">
+            <input type="hidden" id="editReservationId">
+            
+            <div class="form-group">
+              <label>上课时间</label>
+              <input type="datetime-local" class="form-control" id="editStartTime" required>
+            </div>
+            
+            <div class="form-group">
+              <label>时长(小时)</label>
+              <select class="form-control" id="editDuration" required>
+                <option value="1">1小时</option>
+                <option value="2">2小时</option>
+                <option value="3">3小时</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label>球台</label>
+              <select class="form-control" id="editTableId" required>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label>修改原因</label>
+              <textarea class="form-control" id="editReason" rows="3" placeholder="请说明修改原因，将通知相关人员" required></textarea>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" onclick="saveReservationEdit()">保存修改</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  <script>
+    let adminData = {};
+    let currentPage = 1;
+    let totalPages = 1;
+    const pageSize = 15;
+
+    // 页面加载
+    window.onload = function() {
+      adminData = JSON.parse(localStorage.getItem('userData') || '{}');
+      if (!adminData.id || adminData.role !== 'campus_admin') {
+        alert('请先登录');
+        window.location.href = '/';
+        return;
+      }
+      
+      document.getElementById('userInfo').textContent = `校区管理员：${adminData.real_name}`;
+      
+      // 设置默认日期为今天
+      document.getElementById('dateFilter').value = new Date().toISOString().split('T')[0];
+      
+      loadReservations();
+      loadStatistics();
+      loadTables();
+    };
+
+    // 加载预约列表
+    async function loadReservations() {
+      try {
+        const status = document.getElementById('statusFilter').value;
+        const date = document.getElementById('dateFilter').value;
+        
+        let url = `/api/admin/reservations?campus_id=${adminData.campus_id}&page=${currentPage}&limit=${pageSize}`;
+        if (status) url += `&status=${status}`;
+        if (date) {
+          url += `&from=${date} 00:00:00&to=${date} 23:59:59`;
+        }
+        
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '加载失败');
+        }
+        
+        displayReservations(data.reservations);
+        updatePagination(data.total);
+      } catch (error) {
+        console.error('加载预约失败:', error);
+        document.getElementById('reservationTableBody').innerHTML = 
+          '<tr><td colspan="10" class="text-center text-danger">加载失败</td></tr>';
+      }
+    }
+
+    // 搜索预约
+    async function searchReservations() {
+      const keyword = document.getElementById('searchKeyword').value.trim();
+      
+      if (!keyword) {
+        loadReservations();
+        return;
+      }
+      
+      try {
+        const res = await fetch(`/api/admin/reservations/search?campus_id=${adminData.campus_id}&keyword=${encodeURIComponent(keyword)}`);
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '搜索失败');
+        }
+        
+        displayReservations(data.reservations);
+        // 隐藏分页
+        document.getElementById('pagination').innerHTML = '';
+      } catch (error) {
+        console.error('搜索失败:', error);
+        alert('搜索失败：' + error.message);
+      }
+    }
+
+    // 重置筛选条件
+    function resetFilters() {
+      document.getElementById('statusFilter').value = '';
+      document.getElementById('dateFilter').value = new Date().toISOString().split('T')[0];
+      document.getElementById('searchKeyword').value = '';
+      currentPage = 1;
+      loadReservations();
+    }
+
+    // 显示预约列表
+    function displayReservations(reservations) {
+      const tbody = document.getElementById('reservationTableBody');
+      
+      if (!reservations || reservations.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center">暂无数据</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = reservations.map(reservation => `
+        <tr>
+          <td>${reservation.id}</td>
+          <td>${reservation.student_name}</td>
+          <td>${reservation.coach_name}</td>
+          <td>${new Date(reservation.start_time).toLocaleString()}</td>
+          <td>${reservation.duration}</td>
+          <td>${reservation.table_code || '-'}</td>
+          <td>
+            <span class="badge badge-${getStatusBadge(reservation.status)}">
+              ${getStatusText(reservation.status)}
+            </span>
+          </td>
+          <td>￥${reservation.fee}</td>
+          <td>${new Date(reservation.created_at).toLocaleString()}</td>
+          <td>
+            <button class="btn btn-sm btn-outline-info" onclick="viewReservationDetail(${reservation.id})">详情</button>
+            ${reservation.status === 'pending' || reservation.status === 'confirmed' ? 
+              `<button class="btn btn-sm btn-outline-warning" onclick="editReservation(${reservation.id})">编辑</button>` : ''
+            }
+            ${reservation.status !== 'cancelled' && reservation.status !== 'completed' ? 
+              `<button class="btn btn-sm btn-outline-danger" onclick="cancelReservation(${reservation.id})">取消</button>` : ''
+            }
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // 加载统计数据
+    async function loadStatistics() {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+        const weekStartStr = weekStart.toISOString().split('T')[0];
+        
+        // 今日预约
+        const todayRes = await fetch(`/api/admin/reservations/count?campus_id=${adminData.campus_id}&from=${today} 00:00:00&to=${today} 23:59:59`);
+        const todayData = await todayRes.json();
+        document.getElementById('todayCount').textContent = todayData.count || 0;
+        
+        // 待确认
+        const pendingRes = await fetch(`/api/admin/reservations/count?campus_id=${adminData.campus_id}&status=pending`);
+        const pendingData = await pendingRes.json();
+        document.getElementById('pendingCount').textContent = pendingData.count || 0;
+        
+        // 已确认
+        const confirmedRes = await fetch(`/api/admin/reservations/count?campus_id=${adminData.campus_id}&status=confirmed`);
+        const confirmedData = await confirmedRes.json();
+        document.getElementById('confirmedCount').textContent = confirmedData.count || 0;
+        
+        // 本周总计
+        const weeklyRes = await fetch(`/api/admin/reservations/count?campus_id=${adminData.campus_id}&from=${weekStartStr} 00:00:00`);
+        const weeklyData = await weeklyRes.json();
+        document.getElementById('weeklyCount').textContent = weeklyData.count || 0;
+      } catch (error) {
+        console.error('加载统计数据失败:', error);
+      }
+    }
+
+    // 加载球台列表
+    async function loadTables() {
+      try {
+        const res = await fetch(`/api/tables?campus_id=${adminData.campus_id}`);
+        const tables = await res.json();
+        
+        const select = document.getElementById('editTableId');
+        select.innerHTML = '<option value="">请选择球台</option>' + 
+          tables.map(table => `<option value="${table.id}">${table.code}</option>`).join('');
+      } catch (error) {
+        console.error('加载球台失败:', error);
+      }
+    }
+
+    // 查看预约详情
+    async function viewReservationDetail(id) {
+      try {
+        const res = await fetch(`/api/admin/reservation/${id}`);
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '获取详情失败');
+        }
+        
+        const reservation = data.reservation;
+        
+        const content = `
+          <div class="row">
+            <div class="col-md-6">
+              <h6>基本信息</h6>
+              <p><strong>预约ID:</strong> ${reservation.id}</p>
+              <p><strong>学员:</strong> ${reservation.student_name} (ID: ${reservation.student_id})</p>
+              <p><strong>教练:</strong> ${reservation.coach_name} (ID: ${reservation.coach_id})</p>
+              <p><strong>状态:</strong> <span class="badge badge-${getStatusBadge(reservation.status)}">${getStatusText(reservation.status)}</span></p>
+            </div>
+            <div class="col-md-6">
+              <h6>时间安排</h6>
+              <p><strong>上课时间:</strong> ${new Date(reservation.start_time).toLocaleString()}</p>
+              <p><strong>结束时间:</strong> ${new Date(reservation.end_time).toLocaleString()}</p>
+              <p><strong>时长:</strong> ${reservation.duration} 小时</p>
+              <p><strong>球台:</strong> ${reservation.table_code || '未分配'}</p>
+            </div>
+          </div>
+          <div class="row mt-3">
+            <div class="col-md-6">
+              <h6>费用信息</h6>
+              <p><strong>课时费:</strong> ￥${reservation.fee}</p>
+              <p><strong>预约时间:</strong> ${new Date(reservation.created_at).toLocaleString()}</p>
+            </div>
+            <div class="col-md-6">
+              <h6>备注信息</h6>
+              <p><strong>预约备注:</strong> ${reservation.notes || '无'}</p>
+              ${reservation.cancel_reason ? `<p><strong>取消原因:</strong> ${reservation.cancel_reason}</p>` : ''}
+            </div>
+          </div>
+        `;
+        
+        document.getElementById('reservationDetailContent').innerHTML = content;
+        $('#reservationDetailModal').modal('show');
+      } catch (error) {
+        alert('获取详情失败：' + error.message);
+      }
+    }
+
+    // 编辑预约
+    async function editReservation(id) {
+      try {
+        const res = await fetch(`/api/admin/reservation/${id}`);
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '获取预约信息失败');
+        }
+        
+        const reservation = data.reservation;
+        
+        document.getElementById('editReservationId').value = id;
+        document.getElementById('editStartTime').value = new Date(reservation.start_time).toISOString().slice(0, 16);
+        document.getElementById('editDuration').value = reservation.duration;
+        document.getElementById('editTableId').value = reservation.table_id || '';
+        document.getElementById('editReason').value = '';
+        
+        $('#editReservationModal').modal('show');
+      } catch (error) {
+        alert('编辑失败：' + error.message);
+      }
+    }
+
+    // 保存预约编辑
+    async function saveReservationEdit() {
+      const id = document.getElementById('editReservationId').value;
+      const startTime = document.getElementById('editStartTime').value;
+      const duration = document.getElementById('editDuration').value;
+      const tableId = document.getElementById('editTableId').value;
+      const reason = document.getElementById('editReason').value.trim();
+      
+      if (!startTime || !duration || !reason) {
+        alert('请填写所有必填字段');
+        return;
+      }
+      
+      try {
+        const res = await fetch(`/api/admin/reservation/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            start_time: startTime,
+            duration: parseInt(duration),
+            table_id: tableId || null,
+            reason: reason,
+            admin_id: adminData.id
+          })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '保存失败');
+        }
+        
+        alert('预约修改成功');
+        $('#editReservationModal').modal('hide');
+        loadReservations();
+        loadStatistics();
+      } catch (error) {
+        alert('保存失败：' + error.message);
+      }
+    }
+
+    // 取消预约
+    async function cancelReservation(id) {
+      const reason = prompt('请输入取消原因：');
+      if (!reason) return;
+      
+      if (!confirm('确定要取消这个预约吗？')) return;
+      
+      try {
+        const res = await fetch(`/api/admin/reservation/${id}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reason: reason,
+            admin_id: adminData.id
+          })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '取消失败');
+        }
+        
+        alert('预约取消成功');
+        loadReservations();
+        loadStatistics();
+      } catch (error) {
+        alert('取消失败：' + error.message);
+      }
+    }
+
+    // 获取状态徽章样式
+    function getStatusBadge(status) {
+      switch(status) {
+        case 'pending': return 'warning';
+        case 'confirmed': return 'success';
+        case 'completed': return 'info';
+        case 'cancelled': return 'secondary';
+        case 'rejected': return 'danger';
+        default: return 'light';
+      }
+    }
+
+    // 获取状态文本
+    function getStatusText(status) {
+      switch(status) {
+        case 'pending': return '待确认';
+        case 'confirmed': return '已确认';
+        case 'completed': return '已完成';
+        case 'cancelled': return '已取消';
+        case 'rejected': return '已拒绝';
+        default: return '未知';
+      }
+    }
+
+    // 更新分页
+    function updatePagination(total) {
+      totalPages = Math.ceil(total / pageSize);
+      const pagination = document.getElementById('pagination');
+      
+      if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+      }
+      
+      let paginationHtml = '';
+      
+      // 上一页
+      paginationHtml += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+          <a class="page-link" href="#" onclick="changePage(${currentPage - 1})">上一页</a>
+        </li>
+      `;
+      
+      // 页码
+      for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+          paginationHtml += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+              <a class="page-link" href="#" onclick="changePage(${i})">${i}</a>
+            </li>
+          `;
+        } else if (i === currentPage - 3 || i === currentPage + 3) {
+          paginationHtml += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+        }
+      }
+      
+      // 下一页
+      paginationHtml += `
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+          <a class="page-link" href="#" onclick="changePage(${currentPage + 1})">下一页</a>
+        </li>
+      `;
+      
+      pagination.innerHTML = paginationHtml;
+    }
+
+    // 切换页面
+    function changePage(page) {
+      if (page < 1 || page > totalPages || page === currentPage) return;
+      currentPage = page;
+      loadReservations();
+    }
+
+    // 退出登录
+    function logout() {
+      localStorage.removeItem('userData');
+      window.location.href = '/';
+    }
+  </script>
+</body>
+</html>

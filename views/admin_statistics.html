@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>统计报表 - 校区管理员</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="container-fluid">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <a class="navbar-brand" href="#">乒乓球培训管理系统</a>
+      <div class="navbar-nav ml-auto">
+        <span class="navbar-text" id="userInfo">校区管理员</span>
+        <a class="nav-link" href="/" onclick="logout()">退出</a>
+      </div>
+    </nav>
+
+    <div class="row mt-3">
+      <div class="col-md-3">
+        <div class="list-group">
+          <a href="/campus_admin.html" class="list-group-item list-group-item-action">管理首页</a>
+          <a href="/admin_approve.html" class="list-group-item list-group-item-action">教练审核</a>
+          <a href="/admin_users.html" class="list-group-item list-group-item-action">用户管理</a>
+          <a href="/admin_reservations.html" class="list-group-item list-group-item-action">预约管理</a>
+          <a href="/admin_tournament.html" class="list-group-item list-group-item-action">月赛管理</a>
+          <a href="/admin_finance.html" class="list-group-item list-group-item-action">财务管理</a>
+          <a href="/admin_statistics.html" class="list-group-item list-group-item-action active">统计报表</a>
+        </div>
+      </div>
+      
+      <div class="col-md-9">
+        <div class="card mb-4">
+          <div class="card-header">
+            <h5>统计报表</h5>
+            <div class="form-row mt-2">
+              <div class="col-md-3">
+                <select id="reportType" class="form-control" onchange="loadReport()">
+                  <option value="overview">总览统计</option>
+                  <option value="monthly">月度报表</option>
+                  <option value="user">用户统计</option>
+                  <option value="reservation">预约统计</option>
+                  <option value="financial">财务统计</option>
+                  <option value="tournament">月赛统计</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <input type="month" id="monthFilter" class="form-control" onchange="loadReport()">
+              </div>
+              <div class="col-md-3">
+                <button class="btn btn-success" onclick="exportReport()">导出报表</button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="card-body">
+            <div id="reportContent">
+              <div class="text-center">
+                <div class="spinner-border" role="status">
+                  <span class="sr-only">加载中...</span>
+                </div>
+                <p class="mt-2">正在加载统计数据...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  <script>
+    let adminData = {};
+    let currentCharts = [];
+
+    // 页面加载
+    window.onload = function() {
+      adminData = JSON.parse(localStorage.getItem('userData') || '{}');
+      if (!adminData.id || adminData.role !== 'campus_admin') {
+        alert('请先登录');
+        window.location.href = '/';
+        return;
+      }
+      
+      document.getElementById('userInfo').textContent = `校区管理员：${adminData.real_name}`;
+      
+      // 设置默认月份为当前月份
+      const now = new Date();
+      document.getElementById('monthFilter').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
+      loadReport();
+    };
+
+    // 加载报表
+    async function loadReport() {
+      const reportType = document.getElementById('reportType').value;
+      const month = document.getElementById('monthFilter').value;
+      
+      // 清除之前的图表
+      currentCharts.forEach(chart => chart.destroy());
+      currentCharts = [];
+      
+      try {
+        document.getElementById('reportContent').innerHTML = `
+          <div class="text-center">
+            <div class="spinner-border" role="status">
+              <span class="sr-only">加载中...</span>
+            </div>
+            <p class="mt-2">正在加载统计数据...</p>
+          </div>
+        `;
+        
+        let url = `/api/admin/statistics/${reportType}?campus_id=${adminData.campus_id}`;
+        if (month) url += `&month=${month}`;
+        
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '加载失败');
+        }
+        
+        renderReport(reportType, data.data, month);
+      } catch (error) {
+        console.error('加载报表失败:', error);
+        document.getElementById('reportContent').innerHTML = `
+          <div class="alert alert-danger">
+            <h6>加载失败</h6>
+            <p>${error.message}</p>
+          </div>
+        `;
+      }
+    }
+
+    // 渲染报表
+    function renderReport(type, data, month) {
+      const container = document.getElementById('reportContent');
+      
+      switch(type) {
+        case 'overview':
+          renderOverviewReport(container, data);
+          break;
+        case 'monthly':
+          renderMonthlyReport(container, data, month);
+          break;
+        case 'user':
+          renderUserReport(container, data);
+          break;
+        case 'reservation':
+          renderReservationReport(container, data);
+          break;
+        case 'financial':
+          renderFinancialReport(container, data);
+          break;
+        case 'tournament':
+          renderTournamentReport(container, data);
+          break;
+      }
+    }
+
+    // 总览统计报表
+    function renderOverviewReport(container, data) {
+      container.innerHTML = `
+        <div class="row mb-4">
+          <div class="col-md-3">
+            <div class="card text-white bg-primary">
+              <div class="card-body text-center">
+                <h5>总用户数</h5>
+                <h2>${data.total_users || 0}</h2>
+                <small>学员：${data.students || 0} | 教练：${data.coaches || 0}</small>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-success">
+              <div class="card-body text-center">
+                <h5>总预约数</h5>
+                <h2>${data.total_reservations || 0}</h2>
+                <small>本月：${data.monthly_reservations || 0}</small>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-warning">
+              <div class="card-body text-center">
+                <h5>总收入</h5>
+                <h2>￥${data.total_revenue || 0}</h2>
+                <small>本月：￥${data.monthly_revenue || 0}</small>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-info">
+              <div class="card-body text-center">
+                <h5>活跃教练</h5>
+                <h2>${data.active_coaches || 0}</h2>
+                <small>利用率：${data.coach_utilization || 0}%</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">
+                <h6>最近7天预约趋势</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="weeklyTrendChart" style="height: 300px;"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">
+                <h6>教练级别分布</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="coachLevelChart" style="height: 300px;"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // 创建图表
+      if (data.weekly_trend) {
+        createLineChart('weeklyTrendChart', '最近7天预约', data.weekly_trend);
+      }
+      
+      if (data.coach_levels) {
+        createPieChart('coachLevelChart', data.coach_levels);
+      }
+    }
+
+    // 月度报表
+    function renderMonthlyReport(container, data, month) {
+      container.innerHTML = `
+        <h6>${month} 月度报表</h6>
+        
+        <div class="row mb-4">
+          <div class="col-md-4">
+            <div class="card">
+              <div class="card-header">
+                <h6>预约统计</h6>
+              </div>
+              <div class="card-body">
+                <p><strong>总预约数：</strong>${data.reservations?.total || 0}</p>
+                <p><strong>已完成：</strong>${data.reservations?.completed || 0}</p>
+                <p><strong>取消率：</strong>${data.reservations?.cancel_rate || 0}%</p>
+                <p><strong>平均时长：</strong>${data.reservations?.avg_duration || 0}小时</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card">
+              <div class="card-header">
+                <h6>财务统计</h6>
+              </div>
+              <div class="card-body">
+                <p><strong>课时费收入：</strong>￥${data.finance?.lesson_revenue || 0}</p>
+                <p><strong>月赛收入：</strong>￥${data.finance?.tournament_revenue || 0}</p>
+                <p><strong>充值金额：</strong>￥${data.finance?.recharge_amount || 0}</p>
+                <p><strong>退款金额：</strong>￥${data.finance?.refund_amount || 0}</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card">
+              <div class="card-header">
+                <h6>用户活跃度</h6>
+              </div>
+              <div class="card-body">
+                <p><strong>活跃学员：</strong>${data.users?.active_students || 0}</p>
+                <p><strong>活跃教练：</strong>${data.users?.active_coaches || 0}</p>
+                <p><strong>新增用户：</strong>${data.users?.new_users || 0}</p>
+                <p><strong>用户留存率：</strong>${data.users?.retention_rate || 0}%</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-12">
+            <div class="card">
+              <div class="card-header">
+                <h6>每日预约分布</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="dailyDistributionChart" style="height: 400px;"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (data.daily_distribution) {
+        createBarChart('dailyDistributionChart', '每日预约数', data.daily_distribution);
+      }
+    }
+
+    // 用户统计报表
+    function renderUserReport(container, data) {
+      container.innerHTML = `
+        <div class="row mb-4">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">
+                <h6>用户注册趋势</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="userRegistrationChart" style="height: 300px;"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">
+                <h6>用户类型分布</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="userTypeChart" style="height: 300px;"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h6>用户详细信息</h6>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-striped">
+                <thead>
+                  <tr>
+                    <th>类型</th>
+                    <th>总数</th>
+                    <th>活跃数</th>
+                    <th>本月新增</th>
+                    <th>活跃率</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>学员</td>
+                    <td>${data.students?.total || 0}</td>
+                    <td>${data.students?.active || 0}</td>
+                    <td>${data.students?.new_monthly || 0}</td>
+                    <td>${data.students?.activity_rate || 0}%</td>
+                  </tr>
+                  <tr>
+                    <td>教练</td>
+                    <td>${data.coaches?.total || 0}</td>
+                    <td>${data.coaches?.active || 0}</td>
+                    <td>${data.coaches?.new_monthly || 0}</td>
+                    <td>${data.coaches?.activity_rate || 0}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (data.registration_trend) {
+        createLineChart('userRegistrationChart', '用户注册趋势', data.registration_trend);
+      }
+      
+      if (data.user_distribution) {
+        createPieChart('userTypeChart', data.user_distribution);
+      }
+    }
+
+    // 预约统计报表
+    function renderReservationReport(container, data) {
+      container.innerHTML = `
+        <div class="row mb-4">
+          <div class="col-md-3">
+            <div class="card text-white bg-info">
+              <div class="card-body text-center">
+                <h5>总预约</h5>
+                <h2>${data.total || 0}</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-success">
+              <div class="card-body text-center">
+                <h5>已完成</h5>
+                <h2>${data.completed || 0}</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-warning">
+              <div class="card-body text-center">
+                <h5>取消率</h5>
+                <h2>${data.cancel_rate || 0}%</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-secondary">
+              <div class="card-body text-center">
+                <h5>平均时长</h5>
+                <h2>${data.avg_duration || 0}h</h2>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">
+                <h6>预约状态分布</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="reservationStatusChart" style="height: 300px;"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">
+                <h6>热门时段分析</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="popularTimesChart" style="height: 300px;"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (data.status_distribution) {
+        createPieChart('reservationStatusChart', data.status_distribution);
+      }
+      
+      if (data.popular_times) {
+        createBarChart('popularTimesChart', '热门时段', data.popular_times);
+      }
+    }
+
+    // 财务统计报表
+    function renderFinancialReport(container, data) {
+      container.innerHTML = `
+        <div class="row mb-4">
+          <div class="col-md-3">
+            <div class="card text-white bg-success">
+              <div class="card-body text-center">
+                <h5>总收入</h5>
+                <h2>￥${data.total_revenue || 0}</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-primary">
+              <div class="card-body text-center">
+                <h5>课时费</h5>
+                <h2>￥${data.lesson_revenue || 0}</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-info">
+              <div class="card-body text-center">
+                <h5>月赛收入</h5>
+                <h2>￥${data.tournament_revenue || 0}</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-warning">
+              <div class="card-body text-center">
+                <h5>充值金额</h5>
+                <h2>￥${data.recharge_amount || 0}</h2>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-8">
+            <div class="card">
+              <div class="card-header">
+                <h6>收入趋势</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="revenueChart" style="height: 400px;"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card">
+              <div class="card-header">
+                <h6>收入来源</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="revenueSourceChart" style="height: 400px;"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (data.revenue_trend) {
+        createLineChart('revenueChart', '收入趋势', data.revenue_trend);
+      }
+      
+      if (data.revenue_sources) {
+        createPieChart('revenueSourceChart', data.revenue_sources);
+      }
+    }
+
+    // 月赛统计报表
+    function renderTournamentReport(container, data) {
+      container.innerHTML = `
+        <div class="row mb-4">
+          <div class="col-md-3">
+            <div class="card text-white bg-primary">
+              <div class="card-body text-center">
+                <h5>总赛事</h5>
+                <h2>${data.total_tournaments || 0}</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-success">
+              <div class="card-body text-center">
+                <h5>参赛人次</h5>
+                <h2>${data.total_participants || 0}</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-info">
+              <div class="card-body text-center">
+                <h5>平均参赛</h5>
+                <h2>${data.avg_participants || 0}</h2>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-white bg-warning">
+              <div class="card-body text-center">
+                <h5>报名费收入</h5>
+                <h2>￥${data.registration_revenue || 0}</h2>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">
+                <h6>组别参与度</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="groupParticipationChart" style="height: 300px;"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header">
+                <h6>月赛举办趋势</h6>
+              </div>
+              <div class="card-body">
+                <canvas id="tournamentTrendChart" style="height: 300px;"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (data.group_participation) {
+        createBarChart('groupParticipationChart', '组别参与度', data.group_participation);
+      }
+      
+      if (data.tournament_trend) {
+        createLineChart('tournamentTrendChart', '月赛趋势', data.tournament_trend);
+      }
+    }
+
+    // 创建折线图
+    function createLineChart(canvasId, label, data) {
+      const ctx = document.getElementById(canvasId);
+      if (!ctx) return;
+
+      const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.labels || [],
+          datasets: [{
+            label: label,
+            data: data.values || [],
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.1)',
+            tension: 0.1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+      
+      currentCharts.push(chart);
+    }
+
+    // 创建柱状图
+    function createBarChart(canvasId, label, data) {
+      const ctx = document.getElementById(canvasId);
+      if (!ctx) return;
+
+      const chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: data.labels || [],
+          datasets: [{
+            label: label,
+            data: data.values || [],
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+      
+      currentCharts.push(chart);
+    }
+
+    // 创建饼图
+    function createPieChart(canvasId, data) {
+      const ctx = document.getElementById(canvasId);
+      if (!ctx) return;
+
+      const chart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: data.labels || [],
+          datasets: [{
+            data: data.values || [],
+            backgroundColor: [
+              'rgba(255, 99, 132, 0.6)',
+              'rgba(54, 162, 235, 0.6)',
+              'rgba(255, 205, 86, 0.6)',
+              'rgba(75, 192, 192, 0.6)',
+              'rgba(153, 102, 255, 0.6)'
+            ]
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false
+        }
+      });
+      
+      currentCharts.push(chart);
+    }
+
+    // 导出报表
+    function exportReport() {
+      const reportType = document.getElementById('reportType').value;
+      const month = document.getElementById('monthFilter').value;
+      
+      const url = `/api/admin/statistics/${reportType}/export?campus_id=${adminData.campus_id}&month=${month}`;
+      
+      // 创建下载链接
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${reportType}_report_${month}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // 退出登录
+    function logout() {
+      localStorage.removeItem('userData');
+      window.location.href = '/';
+    }
+  </script>
+</body>
+</html>

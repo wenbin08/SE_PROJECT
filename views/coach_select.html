@@ -6,6 +6,58 @@
   <title>选择教练 - 乒乓球培训管理系统</title>
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
   <link rel="stylesheet" href="/css/student.css">
+  <style>
+    .coach-selection-list {
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid #dee2e6;
+      border-radius: 0.25rem;
+      background-color: #f8f9fa;
+      padding: 10px;
+    }
+    
+    .coach-selection-item {
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid #e9ecef;
+      margin-bottom: 8px !important;
+    }
+    
+    .coach-selection-item:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      border-color: #007bff;
+    }
+    
+    .coach-selection-item .select-coach-btn {
+      min-width: 80px;
+      font-size: 0.875rem;
+    }
+    
+    .coach-selection-item .badge {
+      font-size: 0.75rem;
+    }
+    
+    #changeCoachModal .modal-dialog {
+      max-width: 650px;
+    }
+    
+    .coach-change-reason {
+      background-color: #f8f9fa;
+      border-left: 4px solid #007bff;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    
+    .coach-selection-item .card-body {
+      background: white;
+      border-radius: 0.25rem;
+    }
+    
+    .coach-selection-item:last-child {
+      margin-bottom: 0 !important;
+    }
+  </style>
 </head>
 <body>
   <div class="container-fluid">
@@ -317,29 +369,156 @@
     }
     
     async function changeCoach(oldCoachId) {
-      const newCoachId = prompt('请输入新教练的ID：');
-      if (!newCoachId) return;
-      
+      // 显示教练选择模态框
+      await showCoachSelectModal(oldCoachId);
+    }
+    
+    async function showCoachSelectModal(oldCoachId) {
       try {
-        const res = await fetch('/api/coach/change', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            student_id: studentData.id,
-            old_coach_id: oldCoachId,
-            new_coach_id: parseInt(newCoachId)
-          })
-        });
-        
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          alert(data.error || '更换申请失败');
+        // 获取可选择的教练列表（排除当前教练）
+        const res = await fetch(`/api/coaches?campus_id=${studentData.campus_id}`);
+        if (!res.ok) {
+          alert('获取教练列表失败');
           return;
         }
         
-        alert('更换申请已提交，需要当前教练、新教练和管理员三方确认');
+        const coaches = await res.json();
+        const availableCoaches = coaches.filter(coach => coach.id !== oldCoachId);
+        
+        if (availableCoaches.length === 0) {
+          alert('暂无其他教练可选择');
+          return;
+        }
+        
+        // 创建教练选择模态框
+        const modalHtml = `
+          <div class="modal fade" id="changeCoachModal" tabindex="-1">
+            <div class="modal-dialog">
+              <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                  <h5 class="modal-title">
+                    <i class="fas fa-exchange-alt mr-2"></i>更换教练
+                  </h5>
+                  <button type="button" class="close text-white" data-dismiss="modal">
+                    <span>&times;</span>
+                  </button>
+                </div>
+                <div class="modal-body">
+                  <div class="alert alert-info">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    <strong>更换说明：</strong>更换教练申请需要当前教练、新教练和校区管理员三方确认才能生效。
+                  </div>
+                  
+                  <h6 class="mb-3">
+                    <i class="fas fa-users mr-2"></i>请选择您要更换的新教练：
+                  </h6>
+                  <div class="coach-selection-list">
+                    ${availableCoaches.map(coach => `
+                      <div class="card mb-2 coach-selection-item" data-coach-id="${coach.id}">
+                        <div class="card-body py-3">
+                          <div class="d-flex justify-content-between align-items-center">
+                            <div class="flex-grow-1">
+                              <div class="d-flex align-items-center mb-2">
+                                <strong class="mr-2">${coach.real_name}</strong>
+                                <span class="badge badge-info">${coach.coach_level === 'senior' ? '高级教练' : coach.coach_level === 'middle' ? '中级教练' : coach.coach_level === 'junior' ? '初级教练' : '未设置'}</span>
+                                <span class="text-muted ml-2">${coach.gender} · ${coach.age}岁</span>
+                              </div>
+                              <div class="text-muted">
+                                <small>课时费: ¥${coach.hourly_fee}/小时</small>
+                                ${coach.coach_awards ? `<br><small class="text-success"><i class="fas fa-trophy"></i> ${coach.coach_awards}</small>` : ''}
+                              </div>
+                            </div>
+                            <button class="btn btn-sm btn-primary select-coach-btn ml-3" 
+                                    onclick="selectNewCoach(${oldCoachId}, ${coach.id}, '${coach.real_name}')">
+                              选择此教练
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    `).join('')}
+                  </div>
+                  <div class="mt-4">
+                    <h6>
+                      <i class="fas fa-edit mr-2"></i>更换原因：
+                    </h6>
+                    <textarea class="form-control" id="changeReason" rows="3" 
+                              placeholder="请简要说明更换教练的原因，这有助于管理员更好地处理您的申请..."></textarea>
+                    <small class="form-text text-muted">
+                      <i class="fas fa-lightbulb mr-1"></i>
+                      建议详细说明原因，如：上课时间冲突、学习需求变化、教学风格偏好等
+                    </small>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                    <i class="fas fa-times mr-2"></i>取消
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        
+        // 移除已存在的模态框
+        $('#changeCoachModal').remove();
+        
+        // 添加新的模态框到页面
+        $('body').append(modalHtml);
+        
+        // 显示模态框
+        $('#changeCoachModal').modal('show');
+        
       } catch (error) {
-        alert('更换申请失败');
+        console.error('Error:', error);
+        alert('获取教练列表失败');
+      }
+    }
+    
+    async function selectNewCoach(oldCoachId, newCoachId, newCoachName) {
+      const reason = document.getElementById('changeReason').value.trim();
+      
+      if (!reason) {
+        alert('请填写更换原因');
+        return;
+      }
+      
+      if (confirm(`确定要申请更换到教练 ${newCoachName} 吗？
+
+📝 更换原因：${reason}
+
+⚠️ 重要提醒：
+• 更换申请需要当前教练确认同意
+• 新教练需要确认接收您为学员  
+• 校区管理员最终审核批准
+• 三方确认后才能正式更换
+
+是否继续提交申请？`)) {
+        try {
+          const res = await fetch('/api/coach/change-request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              student_id: studentData.id,
+              current_coach_id: oldCoachId,
+              new_coach_id: newCoachId,
+              reason: reason
+            })
+          });
+          
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            alert(data.error || '更换申请失败');
+            return;
+          }
+          
+          alert('更换申请已提交成功！需要当前教练、新教练和管理员三方确认。');
+          $('#changeCoachModal').modal('hide');
+          loadCurrentCoaches(); // 刷新当前教练列表
+          
+        } catch (error) {
+          console.error('Error:', error);
+          alert('更换申请失败');
+        }
       }
     }
     

@@ -245,6 +245,13 @@
         const todayRes = await reservationsRes.json();
         document.getElementById('todayReservations').textContent = todayRes.length;
         
+        // 本月收入
+        const incomeRes = await fetch(`/api/coach/monthly-income?coach_id=${coachData.id}`);
+        if (incomeRes.ok) {
+          const incomeData = await incomeRes.json();
+          document.getElementById('monthlyIncome').textContent = `￥${(incomeData.income || 0).toFixed(2)}`;
+        }
+        
         // 加载今日课表
         loadTodaySchedule();
         loadRecentMessages();
@@ -418,7 +425,26 @@
       }
       return '-';
     }
-    
+
+    async function completeReservation(id) {
+      try {
+        const res = await fetch(`/api/reservations/${id}/complete`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) {
+          alert(data.error || '标记完成失败');
+          return;
+        }
+        
+        alert('课程已标记为完成');
+        loadReservations(); // 刷新预约列表
+        loadSchedule(); // 刷新课表
+        loadDashboard(); // 刷新统计数据
+      } catch (error) {
+        alert('标记完成失败');
+      }
+    }
+
     async function confirmReservation(id) {
       try {
         const res = await fetch(`/api/reservations/${id}/confirm`, { method: 'POST' });
@@ -631,7 +657,67 @@
         alert('操作失败');
       }
     }
-    
+
+    // 加载预约管理
+    async function loadReservations() {
+      try {
+        const res = await fetch(`/api/reservations?coach_id=${coachData.id}`);
+        const reservations = await res.json();
+        
+        const container = document.getElementById('reservationList');
+        if (!container) return;
+        
+        if (reservations.length === 0) {
+          container.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无预约记录</td></tr>';
+        } else {
+          container.innerHTML = reservations.map(reservation => `
+            <tr>
+              <td>${reservation.id}</td>
+              <td>${reservation.student_name}</td>
+              <td>${new Date(reservation.start_time).toLocaleString()}</td>
+              <td>${reservation.table_code || '-'}</td>
+              <td>${getStatusBadge(reservation.status)}</td>
+              <td>${getReservationActionButtons(reservation)}</td>
+            </tr>
+          `).join('');
+        }
+      } catch (error) {
+        console.error('加载预约失败:', error);
+        const container = document.getElementById('reservationList');
+        if (container) container.innerHTML = '<tr><td colspan="6" class="text-center text-danger">加载失败</td></tr>';
+      }
+    }
+
+    // 获取预约操作按钮
+    function getReservationActionButtons(reservation) {
+      if (reservation.status === 'pending') {
+        return `
+          <button class="btn btn-sm btn-success" onclick="confirmReservation(${reservation.id})">确认</button>
+          <button class="btn btn-sm btn-danger ml-1" onclick="rejectReservation(${reservation.id})">拒绝</button>
+        `;
+      } else if (reservation.status === 'confirmed') {
+        const now = new Date();
+        const startTime = new Date(reservation.start_time);
+        const endTime = new Date(reservation.end_time);
+        const timeDiff = startTime - now;
+        
+        let buttons = '';
+        
+        // 如果课程已经结束，显示完成按钮
+        if (now > endTime) {
+          buttons += `<button class="btn btn-sm btn-info" onclick="completeReservation(${reservation.id})">标记完成</button>`;
+        }
+        
+        // 如果距离开始时间超过24小时，可以取消
+        if (timeDiff > 24 * 3600 * 1000) {
+          buttons += `<button class="btn btn-sm btn-warning ml-1" onclick="cancelReservation(${reservation.id})">取消</button>`;
+        }
+        
+        return buttons || '-';
+      }
+      return '-';
+    }
+
     // 加载我的学员
     async function loadMyStudents() {
       try {
@@ -677,7 +763,90 @@
         if (container) container.innerHTML = '<p class="text-center text-danger">加载失败</p>';
       }
     }
-    
+
+    // 加载课后评价
+    async function loadReviews() {
+      try {
+        // 获取教练的已完成预约，用于评价
+        const res = await fetch(`/api/reservations?coach_id=${coachData.id}&status=completed`);
+        const completedReservations = await res.json();
+        
+        const container = document.getElementById('reviewList');
+        if (!container) return;
+        
+        if (completedReservations.length === 0) {
+          container.innerHTML = '<p class="text-center text-muted">暂无已完成的课程</p>';
+        } else {
+          container.innerHTML = `
+            <div class="table-responsive">
+              <table class="table table-striped">
+                <thead>
+                  <tr>
+                    <th>学员</th>
+                    <th>课程时间</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${completedReservations.map(reservation => `
+                    <tr>
+                      <td>${reservation.student_name}</td>
+                      <td>${new Date(reservation.start_time).toLocaleString()}</td>
+                      <td><span class="badge badge-info">已完成</span></td>
+                      <td>
+                        <button class="btn btn-sm btn-primary" onclick="writeReview(${reservation.id})">写评价</button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+      } catch (error) {
+        console.error('加载评价失败:', error);
+        const container = document.getElementById('reviewList');
+        if (container) container.innerHTML = '<p class="text-center text-danger">加载失败</p>';
+      }
+    }
+
+    // 写评价
+    function writeReview(reservationId) {
+      // 简单的评价功能，可以在后续扩展
+      const content = prompt('请输入对学员的评价：');
+      if (content && content.trim()) {
+        submitReview(reservationId, content.trim());
+      }
+    }
+
+    // 提交评价
+    async function submitReview(reservationId, content) {
+      try {
+        const res = await fetch('/api/reviews', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reservation_id: reservationId,
+            reviewer_id: coachData.id,
+            role: 'coach',
+            content: content
+          })
+        });
+        
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          alert(data.error || '提交评价失败');
+          return;
+        }
+        
+        alert('评价提交成功');
+        loadReviews(); // 重新加载评价列表
+      } catch (error) {
+        alert('提交评价失败');
+      }
+    }
+
     // 其他辅助函数
     function getStatusColor(status) {
       const colors = {

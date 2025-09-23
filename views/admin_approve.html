@@ -98,7 +98,7 @@
     
     async function loadPendingCoaches() {
       try {
-        const adminData = JSON.parse(localStorage.getItem('adminData') || '{}');
+        const adminData = JSON.parse(localStorage.getItem('userData') || '{}');
         const campusId = adminData.campus_id;
         
         const res = await fetch(`/api/campus/coach/pending?campus_id=${campusId}`);

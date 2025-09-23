@@ -24,6 +24,7 @@
           <a href="/admin_approve.html" class="list-group-item list-group-item-action">教练审核</a>
           <a href="/admin_users.html" class="list-group-item list-group-item-action">用户管理</a>
           <a href="/admin_reservations.html" class="list-group-item list-group-item-action">预约管理</a>
+          <a href="/admin_tournament.html" class="list-group-item list-group-item-action">月赛管理</a>
           <a href="/admin_finance.html" class="list-group-item list-group-item-action">财务管理</a>
           <a href="/admin_statistics.html" class="list-group-item list-group-item-action">统计报表</a>
         </div>
@@ -144,8 +145,10 @@
         const res = await fetch(`/api/admin/statistics?campus_id=${adminData.campus_id}`);
         const stats = await res.json();
         
-        document.getElementById('studentCount').textContent = stats.users.student || 0;
-        document.getElementById('coachCount').textContent = stats.users.coach || 0;
+        // 确保 stats.users 存在，并提供默认值
+        const users = stats.users || {};
+        document.getElementById('studentCount').textContent = users.student || 0;
+        document.getElementById('coachCount').textContent = users.coach || 0;
         document.getElementById('pendingCount').textContent = await getPendingCount();
         document.getElementById('todayReservations').textContent = await getTodayReservations();
       } catch (error) {

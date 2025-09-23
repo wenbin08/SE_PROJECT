@@ -285,6 +285,35 @@ app.post('/api/coach/select/approve', (req, res) => {
   });
 });
 
+// 获取教练月收入统计
+app.get('/api/coach/monthly-income', (req, res) => {
+  const { coach_id } = req.query;
+  if (!coach_id) return res.status(400).json({ error: '缺少参数' });
+  
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  
+  // 计算本月已完成课程的收入
+  db.query(`
+    SELECT 
+      COUNT(*) as sessions,
+      COALESCE(SUM(u.hourly_fee), 0) as income
+    FROM reservation r
+    JOIN user u ON r.coach_id = u.id
+    WHERE r.coach_id = ? 
+      AND r.status = 'completed' 
+      AND r.start_time >= ?
+  `, [coach_id, startOfMonth], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    const result = rows[0] || { sessions: 0, income: 0 };
+    res.json({
+      sessions: result.sessions,
+      income: result.income
+    });
+  });
+});
+
 // 学员的已批准教练列表
 app.get('/api/student/approved-coaches', (req, res) => {
   const { student_id } = req.query;
@@ -297,6 +326,93 @@ app.get('/api/student/approved-coaches', (req, res) => {
     (err, rows) => {
       if (err) return res.status(500).json({ error: '查询失败' });
       res.json(rows);
+    }
+  );
+});
+
+// 学生预约数量统计
+app.get('/api/student/reservations/count', (req, res) => {
+  const { student_id } = req.query;
+  if (!student_id) return res.status(400).json({ error: '缺少参数' });
+  
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  
+  db.query(
+    `SELECT COUNT(*) as count FROM reservation 
+     WHERE student_id=? AND start_time >= ?`,
+    [student_id, startOfMonth],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      res.json({ count: rows[0]?.count || 0 });
+    }
+  );
+});
+
+// 学生参与赛事数量统计
+app.get('/api/student/tournaments/count', (req, res) => {
+  const { student_id } = req.query;
+  if (!student_id) return res.status(400).json({ error: '缺少参数' });
+  
+  db.query(
+    `SELECT COUNT(*) as count FROM tournament_signup WHERE user_id=?`,
+    [student_id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      res.json({ count: rows[0]?.count || 0 });
+    }
+  );
+});
+
+// 学生最近预约
+app.get('/api/student/reservations/recent', (req, res) => {
+  const { student_id, limit = 5 } = req.query;
+  if (!student_id) return res.status(400).json({ error: '缺少参数' });
+  
+  db.query(
+    `SELECT r.*, u.real_name as coach_name 
+     FROM reservation r 
+     JOIN user u ON r.coach_id = u.id 
+     WHERE r.student_id=? 
+     ORDER BY r.start_time DESC 
+     LIMIT ?`,
+    [student_id, parseInt(limit)],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      res.json({ reservations: rows });
+    }
+  );
+});
+
+// 学生学习进度
+app.get('/api/student/progress', (req, res) => {
+  const { student_id } = req.query;
+  if (!student_id) return res.status(400).json({ error: '缺少参数' });
+  
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  
+  db.query(
+    `SELECT 
+       COUNT(CASE WHEN status = 'completed' THEN 1 END) as total_sessions,
+       COUNT(CASE WHEN status = 'completed' AND start_time >= ? THEN 1 END) as month_sessions,
+       ROUND(AVG(CASE WHEN tr.reservation_id IS NOT NULL THEN 5 ELSE NULL END), 1) as avg_rating
+     FROM reservation r
+     LEFT JOIN training_review tr ON r.id = tr.reservation_id AND tr.role = 'coach'
+     WHERE r.student_id = ?`,
+    [startOfMonth, student_id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      const result = rows[0] || {};
+      res.json({ 
+        progress: {
+          total_hours: result.total_sessions || 0,
+          month_hours: result.month_sessions || 0,
+          avg_rating: result.avg_rating || 0
+        }
+      });
     }
   );
 });
@@ -482,6 +598,19 @@ app.post('/api/reservations/:id/reject', (req, res) => {
     if (err) return res.status(500).json({ error: '更新失败' });
     if (r.affectedRows===0) return res.status(400).json({ error: '状态不允许或不存在' });
     logAudit('reservation_reject', null, { reservation_id: Number(id) });
+    res.json({ success: true });
+  });
+});
+
+// 标记预约为已完成
+app.post('/api/reservations/:id/complete', (req, res) => {
+  const { id } = req.params;
+  
+  db.query(`UPDATE reservation SET status='completed' WHERE id=? AND status='confirmed'`, [id], (err, result) => {
+    if (err) return res.status(500).json({ error: '更新失败' });
+    if (result.affectedRows === 0) return res.status(400).json({ error: '预约不存在或状态不允许' });
+    
+    logAudit('reservation_complete', null, { reservation_id: Number(id) });
     res.json({ success: true });
   });
 });
@@ -1008,125 +1137,632 @@ app.delete('/api/courses/:courseId', (req, res) => {
   });
 });
 
-// 更换教练员功能
-app.post('/api/coach/change', (req, res) => {
-  const { student_id, old_coach_id, new_coach_id } = req.body;
-  if (!student_id || !old_coach_id || !new_coach_id) return res.status(400).json({ error: '缺少参数' });
+// 学员申请更换教练
+app.post('/api/student/change-coach-request', (req, res) => {
+  const { student_id, new_coach_id, reason } = req.body;
+  if (!student_id || !new_coach_id) {
+    return res.status(400).json({ error: '缺少必填参数' });
+  }
   
-  // 1. 检查当前关系是否存在
-  db.query(`SELECT * FROM coach_student WHERE student_id=? AND coach_id=? AND status='approved'`, 
-    [student_id, old_coach_id], (err, rows) => {
+  // 1. 获取学员当前的教练
+  db.query(`SELECT coach_id FROM coach_student WHERE student_id=? AND status='approved'`, 
+    [student_id], (err, currentCoaches) => {
     if (err) return res.status(500).json({ error: '查询失败' });
-    if (!rows || rows.length === 0) return res.status(400).json({ error: '当前教练关系不存在' });
+    if (!currentCoaches || currentCoaches.length === 0) {
+      return res.status(400).json({ error: '您当前没有教练，无法更换' });
+    }
     
-    // 2. 检查新教练容量
-    db.query(`SELECT COUNT(*) AS cnt FROM coach_student WHERE coach_id=? AND status='approved'`, 
-      [new_coach_id], (e2, r2) => {
-      if (e2) return res.status(500).json({ error: '查询失败' });
-      if (r2[0].cnt >= 20) return res.status(400).json({ error: '新教练名额已满' });
+    const current_coach_id = currentCoaches[0].coach_id;
+    
+    // 2. 检查是否选择了相同的教练
+    if (current_coach_id == new_coach_id) {
+      return res.status(400).json({ error: '不能选择当前的教练' });
+    }
+    
+    // 3. 验证新教练是否存在且在同一校区
+    db.query(`
+      SELECT u1.id, u1.real_name, u1.campus_id as student_campus,
+             u2.id as coach_id, u2.real_name as coach_name, u2.campus_id as coach_campus
+      FROM user u1, user u2 
+      WHERE u1.id=? AND u2.id=? AND u2.role='coach' AND u2.status='active'
+    `, [student_id, new_coach_id], (err, userInfo) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      if (!userInfo || userInfo.length === 0) {
+        return res.status(400).json({ error: '目标教练不存在或不可用' });
+      }
       
-      // 3. 通知三方：当前教练、新教练、校区管理员
-      const msgContent = `学员${student_id}申请从教练${old_coach_id}更换到教练${new_coach_id}`;
-      db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '更换教练申请', ?)`, [old_coach_id, msgContent]);
-      db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '更换教练申请', ?)`, [new_coach_id, msgContent]);
+      const info = userInfo[0];
+      if (info.student_campus !== info.coach_campus) {
+        return res.status(400).json({ error: '只能选择同校区的教练' });
+      }
       
-      // 获取校区管理员
-      db.query(`SELECT u.id FROM user u WHERE u.role='campus_admin' AND u.campus_id=(SELECT campus_id FROM user WHERE id=?)`, 
-        [student_id], (e3, adminRows) => {
-        if (adminRows && adminRows.length > 0) {
-          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '更换教练申请', ?)`, [adminRows[0].id, msgContent]);
+      // 4. 检查是否已有待处理的申请
+      db.query(`SELECT id FROM coach_change_request WHERE student_id=? AND status='pending'`, 
+        [student_id], (err, pending) => {
+        if (err) return res.status(500).json({ error: '查询失败' });
+        if (pending && pending.length > 0) {
+          return res.status(400).json({ error: '您已有待处理的更换申请，请等待处理完成' });
         }
         
-        logAudit('coach_change_request', student_id, { old_coach_id, new_coach_id });
-        res.json({ success: true, message: '更换申请已提交，等待三方确认' });
+        // 5. 创建更换申请
+        const sql = `INSERT INTO coach_change_request (student_id, current_coach_id, new_coach_id, reason, status) 
+                     VALUES (?, ?, ?, ?, 'pending')`;
+        db.query(sql, [student_id, current_coach_id, new_coach_id, reason || ''], (err, result) => {
+          if (err) return res.status(500).json({ error: '申请提交失败' });
+          
+          const requestId = result.insertId;
+          
+          // 6. 发送消息给三方
+          const studentName = info.real_name;
+          const currentCoachMessage = `学员${studentName}申请更换教练，请查看并处理申请ID: ${requestId}`;
+          const newCoachMessage = `学员${studentName}申请将您设为新教练，请查看并处理申请ID: ${requestId}`;
+          const adminMessage = `学员${studentName}提交了更换教练申请，请查看并处理申请ID: ${requestId}`;
+          
+          // 发送给当前教练
+          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换申请', ?)`, 
+            [current_coach_id, currentCoachMessage]);
+          
+          // 发送给新教练
+          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换申请', ?)`, 
+            [new_coach_id, newCoachMessage]);
+          
+          // 发送给校区管理员
+          db.query(`SELECT id FROM user WHERE role='campus_admin' AND campus_id=?`, 
+            [info.student_campus], (err, admins) => {
+            if (admins && admins.length > 0) {
+              db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换申请', ?)`, 
+                [admins[0].id, adminMessage]);
+            }
+          });
+          
+          logAudit('coach_change_request', student_id, { 
+            current_coach_id, 
+            new_coach_id, 
+            request_id: requestId 
+          });
+          
+          res.json({ 
+            success: true, 
+            request_id: requestId,
+            message: '更换申请已提交，需要当前教练、新教练和校区管理员都同意后才能生效' 
+          });
+        });
       });
     });
   });
 });
 
-// 管理员审核教练更换
-app.post('/api/admin/coach-change/approve', (req, res) => {
-  const { student_id, old_coach_id, new_coach_id, approved } = req.body;
-  if (!student_id || !old_coach_id || !new_coach_id || approved === undefined) {
+// 获取学员当前教练和可选教练列表
+app.get('/api/student/coach-change-info', (req, res) => {
+  const { student_id } = req.query;
+  if (!student_id) return res.status(400).json({ error: '缺少参数' });
+  
+  // 1. 获取当前教练
+  db.query(`
+    SELECT u.id, u.real_name, u.coach_level, u.hourly_fee
+    FROM coach_student cs 
+    JOIN user u ON cs.coach_id = u.id 
+    WHERE cs.student_id=? AND cs.status='approved'
+  `, [student_id], (err, currentCoach) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    
+    // 2. 获取同校区可选教练列表
+    db.query(`
+      SELECT u.id, u.real_name, u.coach_level, u.hourly_fee, u.coach_awards
+      FROM user u 
+      WHERE u.role='coach' AND u.status='active' 
+        AND u.campus_id = (SELECT campus_id FROM user WHERE id=?)
+        AND u.id != COALESCE((SELECT coach_id FROM coach_student WHERE student_id=? AND status='approved'), 0)
+      ORDER BY u.coach_level DESC, u.real_name
+    `, [student_id, student_id], (err, availableCoaches) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      
+      res.json({
+        current_coach: currentCoach && currentCoach.length > 0 ? currentCoach[0] : null,
+        available_coaches: availableCoaches || []
+      });
+    });
+  });
+});
+
+// 更换教练员功能
+// 教练/管理员响应更换申请
+app.post('/api/coach-change-request/:id/respond', (req, res) => {
+  const { id } = req.params;
+  const { user_id, user_role, approve, response_text } = req.body;
+  
+  if (!user_id || !user_role || approve === undefined) {
     return res.status(400).json({ error: '缺少参数' });
   }
   
-  if (approved) {
-    // 更新关系
-    db.query(`UPDATE coach_student SET status='rejected' WHERE student_id=? AND coach_id=?`, 
-      [student_id, old_coach_id], (e1) => {
-      if (e1) return res.status(500).json({ error: '更新失败' });
-      
-      db.query(`INSERT INTO coach_student (student_id, coach_id, status) VALUES (?, ?, 'approved') 
-                ON DUPLICATE KEY UPDATE status='approved'`, [student_id, new_coach_id], (e2) => {
-        if (e2) return res.status(500).json({ error: '创建新关系失败' });
+  // 1. 获取申请详情
+  db.query(`SELECT * FROM coach_change_request WHERE id=? AND status='pending'`, 
+    [id], (err, requests) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (!requests || requests.length === 0) {
+      return res.status(400).json({ error: '申请不存在或已处理' });
+    }
+    
+    const request = requests[0];
+    
+    // 2. 验证用户权限
+    let updateField = '';
+    let statusUpdate = '';
+    
+    if (user_role === 'coach' && user_id == request.current_coach_id) {
+      updateField = 'current_coach_response';
+      statusUpdate = approve ? 'current_coach_approved' : 'rejected';
+    } else if (user_role === 'coach' && user_id == request.new_coach_id) {
+      updateField = 'new_coach_response';
+      statusUpdate = approve ? 'new_coach_approved' : 'rejected';
+    } else if (user_role === 'campus_admin') {
+      // 验证管理员是否管理该学员所在校区
+      db.query(`SELECT u1.campus_id FROM user u1, user u2 
+                WHERE u1.id=? AND u2.id=? AND u1.campus_id=u2.campus_id AND u1.role='campus_admin'`, 
+        [user_id, request.student_id], (err, adminCheck) => {
+        if (err || !adminCheck || adminCheck.length === 0) {
+          return res.status(403).json({ error: '无权限处理此申请' });
+        }
         
-        // 通知所有相关人员
-        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换成功', '您的教练更换申请已通过')`, [student_id]);
-        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换通知', '学员已更换到您处')`, [new_coach_id]);
-        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换通知', '学员已离开您的教学')`, [old_coach_id]);
+        updateField = 'admin_response';
+        statusUpdate = approve ? 'admin_approved' : 'rejected';
         
-        logAudit('coach_change_approved', null, { student_id, old_coach_id, new_coach_id });
-        res.json({ success: true });
+        continueProcess();
       });
+      return;
+    } else {
+      return res.status(403).json({ error: '无权限处理此申请' });
+    }
+    
+    continueProcess();
+    
+    function continueProcess() {
+      // 3. 如果拒绝，直接更新状态
+      if (!approve) {
+        db.query(`UPDATE coach_change_request SET ${updateField}=?, status='rejected' WHERE id=?`, 
+          [response_text || '拒绝', id], (err) => {
+          if (err) return res.status(500).json({ error: '更新失败' });
+          
+          // 发送拒绝消息给学员
+          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换申请被拒绝', ?)`, 
+            [request.student_id, `您的教练更换申请已被拒绝。拒绝原因: ${response_text || '无'}`]);
+          
+          logAudit('coach_change_rejected', user_id, { request_id: id, reason: response_text });
+          res.json({ success: true, message: '已拒绝申请' });
+        });
+        return;
+      }
+      
+      // 4. 如果同意，更新响应并检查是否三方都同意
+      db.query(`UPDATE coach_change_request SET ${updateField}=? WHERE id=?`, 
+        [response_text || '同意', id], (err) => {
+        if (err) return res.status(500).json({ error: '更新失败' });
+        
+        // 获取更新后的申请状态
+        db.query(`SELECT * FROM coach_change_request WHERE id=?`, [id], (err, updated) => {
+          if (err) return res.status(500).json({ error: '查询失败' });
+          
+          const req = updated[0];
+          const hasCurrentCoachApproval = req.current_coach_response && req.current_coach_response !== '拒绝';
+          const hasNewCoachApproval = req.new_coach_response && req.new_coach_response !== '拒绝';
+          const hasAdminApproval = req.admin_response && req.admin_response !== '拒绝';
+          
+          // 5. 检查是否三方都同意
+          if (hasCurrentCoachApproval && hasNewCoachApproval && hasAdminApproval) {
+            // 执行教练更换
+            executeCoachChange(req.student_id, req.current_coach_id, req.new_coach_id, id, res);
+          } else {
+            // 发送进度消息给学员
+            const approvalStatus = [];
+            if (hasCurrentCoachApproval) approvalStatus.push('当前教练已同意');
+            if (hasNewCoachApproval) approvalStatus.push('新教练已同意');
+            if (hasAdminApproval) approvalStatus.push('校区管理员已同意');
+            
+            const statusMsg = `您的教练更换申请进度更新: ${approvalStatus.join('，')}。还需要其他人员确认。`;
+            db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换申请进度', ?)`, 
+              [req.student_id, statusMsg]);
+            
+            res.json({ success: true, message: '已记录您的同意，等待其他人员确认' });
+          }
+        });
+      });
+    }
+  });
+});
+
+// 执行教练更换
+function executeCoachChange(studentId, currentCoachId, newCoachId, requestId, res) {
+  // 1. 更新coach_student表
+  db.query(`UPDATE coach_student SET coach_id=? WHERE student_id=? AND coach_id=? AND status='approved'`, 
+    [newCoachId, studentId, currentCoachId], (err) => {
+    if (err) return res.status(500).json({ error: '更换失败' });
+    
+    // 2. 更新申请状态
+    db.query(`UPDATE coach_change_request SET status='completed' WHERE id=?`, [requestId], (err) => {
+      if (err) console.error('更新申请状态失败:', err);
+      
+      // 3. 发送成功消息给所有相关人员
+      const successMsg = `教练更换已完成，学员现在的教练已更新。`;
+      
+      // 发送给学员
+      db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换成功', ?)`, 
+        [studentId, successMsg]);
+      
+      // 发送给新教练
+      db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '新学员加入', '您有新的学员加入，请关注。')`, 
+        [newCoachId]);
+      
+      // 发送给前教练
+      db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '学员转出通知', '您的学员已转至其他教练。')`, 
+        [currentCoachId]);
+      
+      logAudit('coach_change_success', studentId, { 
+        old_coach: currentCoachId, 
+        new_coach: newCoachId,
+        request_id: requestId 
+      });
+      
+      res.json({ success: true, message: '教练更换完成' });
     });
+  });
+}
+
+// 获取更换申请列表（按角色）
+app.get('/api/coach-change-requests', (req, res) => {
+  const { user_id, user_role } = req.query;
+  if (!user_id || !user_role) return res.status(400).json({ error: '缺少参数' });
+  
+  let whereClause = '';
+  let params = [];
+  
+  if (user_role === 'student') {
+    whereClause = 'WHERE ccr.student_id = ?';
+    params = [user_id];
+  } else if (user_role === 'coach') {
+    whereClause = 'WHERE (ccr.current_coach_id = ? OR ccr.new_coach_id = ?) AND ccr.status != "completed"';
+    params = [user_id, user_id];
+  } else if (user_role === 'campus_admin') {
+    whereClause = `WHERE ccr.student_id IN (
+      SELECT u.id FROM user u WHERE u.campus_id = (
+        SELECT campus_id FROM user WHERE id = ? AND role = 'campus_admin'
+      )
+    ) AND ccr.status != "completed"`;
+    params = [user_id];
   } else {
-    // 拒绝申请
-    db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '教练更换被拒绝', '您的教练更换申请被拒绝')`, [student_id]);
-    logAudit('coach_change_rejected', null, { student_id, old_coach_id, new_coach_id });
-    res.json({ success: true });
+    return res.status(400).json({ error: '无效的用户角色' });
   }
+  
+  const sql = `
+    SELECT 
+      ccr.*,
+      s.real_name as student_name,
+      cc.real_name as current_coach_name,
+      nc.real_name as new_coach_name
+    FROM coach_change_request ccr
+    JOIN user s ON ccr.student_id = s.id
+    JOIN user cc ON ccr.current_coach_id = cc.id
+    JOIN user nc ON ccr.new_coach_id = nc.id
+    ${whereClause}
+    ORDER BY ccr.created_at DESC
+  `;
+  
+  db.query(sql, params, (err, requests) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    res.json(requests || []);
+  });
 });
 
 // 校区管理员管理用户信息
 app.get('/api/admin/users', (req, res) => {
-  const { campus_id, role, search } = req.query;
+  const { campus_id, role, search, status, page = 1, limit = 10 } = req.query;
   let where = ['1=1'];
   let params = [];
   
   if (campus_id) { where.push('campus_id=?'); params.push(campus_id); }
   if (role) { where.push('role=?'); params.push(role); }
+  if (status) { where.push('status=?'); params.push(status); }
   if (search) { where.push('(real_name LIKE ? OR phone LIKE ?)'); params.push(`%${search}%`, `%${search}%`); }
   
+  // 计算总数
+  const countSql = `SELECT COUNT(*) as total FROM user WHERE ${where.join(' AND ')}`;
+  db.query(countSql, params, (err, countResult) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    
+    const total = countResult[0].total;
+    const offset = (page - 1) * limit;
+    
+    // 获取分页数据
+    const sql = `SELECT id, username, real_name, gender, age, campus_id, phone, email, role, status, 
+                 coach_level, hourly_fee, achievements, id_card, created_at 
+                 FROM user WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ? OFFSET ?`;
+    
+    db.query(sql, [...params, parseInt(limit), offset], (err, rows) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      res.json({ success: true, users: rows, total });
+    });
+  });
+});
+
+// 管理员搜索用户
+app.get('/api/admin/users/search', (req, res) => {
+  const { campus_id, type, keyword } = req.query;
+  if (!campus_id || !type || !keyword) return res.status(400).json({ error: '缺少参数' });
+  
+  let where = ['campus_id=?'];
+  let params = [campus_id];
+  
+  switch(type) {
+    case 'name':
+      where.push('real_name LIKE ?');
+      params.push(`%${keyword}%`);
+      break;
+    case 'phone':
+      where.push('phone=?');
+      params.push(keyword);
+      break;
+    case 'id_card':
+      where.push('id_card=?');
+      params.push(keyword);
+      break;
+    case 'username':
+      where.push('username LIKE ?');
+      params.push(`%${keyword}%`);
+      break;
+    default:
+      return res.status(400).json({ error: '不支持的搜索类型' });
+  }
+  
   const sql = `SELECT id, username, real_name, gender, age, campus_id, phone, email, role, status, 
-               coach_level, hourly_fee, created_at FROM user WHERE ${where.join(' AND ')} ORDER BY id DESC`;
+               coach_level, hourly_fee, achievements, id_card, created_at 
+               FROM user WHERE ${where.join(' AND ')} ORDER BY id DESC`;
   
   db.query(sql, params, (err, rows) => {
+    if (err) return res.status(500).json({ error: '搜索失败' });
+    res.json({ success: true, users: rows });
+  });
+});
+
+// 获取单个用户详细信息
+app.get('/api/admin/user/:id', (req, res) => {
+  const { id } = req.params;
+  
+  const sql = `SELECT id, username, real_name, gender, age, campus_id, phone, email, role, status, 
+               coach_level, hourly_fee, achievements, id_card, created_at 
+               FROM user WHERE id=?`;
+  
+  db.query(sql, [id], (err, rows) => {
     if (err) return res.status(500).json({ error: '查询失败' });
-    res.json(rows);
+    if (rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    res.json({ success: true, user: rows[0] });
+  });
+});
+
+// 管理员添加用户
+app.post('/api/admin/user', (req, res) => {
+  const { username, password, real_name, role, phone, email, gender, age, id_card, campus_id, coach_level, achievements } = req.body;
+  
+  if (!username || !password || !real_name || !role || !phone || !campus_id) {
+    return res.status(400).json({ error: '缺少必填字段' });
+  }
+  
+  if (!validatePhone(phone)) return res.status(400).json({ error: '手机号格式不正确' });
+  if (email && !validateEmail(email)) return res.status(400).json({ error: '邮箱格式不正确' });
+  
+  // 检查用户名是否已存在
+  db.query('SELECT id FROM user WHERE username=?', [username], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (rows.length > 0) return res.status(400).json({ error: '用户名已存在' });
+    
+    // 检查手机号是否已存在
+    db.query('SELECT id FROM user WHERE phone=?', [phone], (err, rows) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      if (rows.length > 0) return res.status(400).json({ error: '手机号已被注册' });
+      
+      // 设置小时费率
+      let hourlyFee = 0;
+      if (role === 'coach') {
+        switch(coach_level) {
+          case '初级': hourlyFee = 80; break;
+          case '中级': hourlyFee = 150; break;
+          case '高级': hourlyFee = 200; break;
+          default: hourlyFee = 80;
+        }
+      }
+      
+      const hashedPassword = hashPassword(password);
+      const status = role === 'coach' ? 'pending' : 'active';
+      
+      const sql = `INSERT INTO user (username, password, real_name, gender, age, campus_id, phone, email, 
+                   role, status, coach_level, hourly_fee, achievements, id_card) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      
+      db.query(sql, [username, hashedPassword, real_name, gender, age, campus_id, phone, email, 
+                     role, status, coach_level, hourlyFee, achievements, id_card], (err, result) => {
+        if (err) return res.status(500).json({ error: '创建用户失败' });
+        
+        // 发送通知消息
+        const message = role === 'coach' ? '您的教练账户已创建，等待审核' : '您的学员账户已创建';
+        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '账户创建', ?)`, 
+                 [result.insertId, message]);
+        
+        logAudit('admin_user_create', null, { user_id: result.insertId, role, real_name });
+        res.json({ success: true, user_id: result.insertId });
+      });
+    });
   });
 });
 
 // 校区管理员修改用户信息
 app.put('/api/admin/user/:id', (req, res) => {
   const { id } = req.params;
-  const { real_name, phone, email, gender, age } = req.body;
+  const { username, password, real_name, phone, email, gender, age, id_card, role, coach_level, achievements } = req.body;
   
   if (phone && !validatePhone(phone)) return res.status(400).json({ error: '手机号格式不正确' });
   if (email && !validateEmail(email)) return res.status(400).json({ error: '邮箱格式不正确' });
   
-  const fields = [];
-  const params = [];
-  if (real_name) { fields.push('real_name=?'); params.push(real_name); }
-  if (phone) { fields.push('phone=?'); params.push(phone); }
-  if (email) { fields.push('email=?'); params.push(email); }
-  if (gender) { fields.push('gender=?'); params.push(gender); }
-  if (age) { fields.push('age=?'); params.push(age); }
-  
-  if (fields.length === 0) return res.status(400).json({ error: '无可更新字段' });
-  
-  params.push(id);
-  const sql = `UPDATE user SET ${fields.join(', ')} WHERE id=?`;
-  
-  db.query(sql, params, (err, result) => {
-    if (err) return res.status(500).json({ error: '更新失败' });
-    if (result.affectedRows === 0) return res.status(404).json({ error: '用户不存在' });
+  // 检查用户是否存在
+  db.query('SELECT * FROM user WHERE id=?', [id], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (rows.length === 0) return res.status(404).json({ error: '用户不存在' });
     
-    // 通知用户信息被修改
-    db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '个人信息更新', '您的个人信息已被管理员更新')`, [id]);
+    const currentUser = rows[0];
+    const fields = [];
+    const params = [];
     
-    logAudit('admin_user_update', null, { user_id: id, fields: fields.map(f => f.split('=')[0]) });
-    res.json({ success: true });
+    // 检查用户名重复（如果有更改）
+    if (username && username !== currentUser.username) {
+      db.query('SELECT id FROM user WHERE username=? AND id!=?', [username, id], (err, rows) => {
+        if (err) return res.status(500).json({ error: '查询失败' });
+        if (rows.length > 0) return res.status(400).json({ error: '用户名已存在' });
+        
+        proceedWithUpdate();
+      });
+    } else {
+      proceedWithUpdate();
+    }
+    
+    function proceedWithUpdate() {
+      if (username) { fields.push('username=?'); params.push(username); }
+      if (password) { fields.push('password=?'); params.push(hashPassword(password)); }
+      if (real_name) { fields.push('real_name=?'); params.push(real_name); }
+      if (phone) { fields.push('phone=?'); params.push(phone); }
+      if (email) { fields.push('email=?'); params.push(email); }
+      if (gender) { fields.push('gender=?'); params.push(gender); }
+      if (age) { fields.push('age=?'); params.push(age); }
+      if (id_card) { fields.push('id_card=?'); params.push(id_card); }
+      
+      // 教练相关字段
+      if (role === 'coach' && coach_level) {
+        fields.push('coach_level=?');
+        params.push(coach_level);
+        
+        // 更新小时费率
+        let hourlyFee = 80;
+        switch(coach_level) {
+          case '中级': hourlyFee = 150; break;
+          case '高级': hourlyFee = 200; break;
+        }
+        fields.push('hourly_fee=?');
+        params.push(hourlyFee);
+      }
+      
+      if (achievements !== undefined) { fields.push('achievements=?'); params.push(achievements); }
+      
+      if (fields.length === 0) return res.status(400).json({ error: '无可更新字段' });
+      
+      params.push(id);
+      const sql = `UPDATE user SET ${fields.join(', ')} WHERE id=?`;
+      
+      db.query(sql, params, (err, result) => {
+        if (err) return res.status(500).json({ error: '更新失败' });
+        
+        // 通知用户信息被修改
+        db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '个人信息更新', '您的个人信息已被管理员更新')`, [id]);
+        
+        logAudit('admin_user_update', null, { user_id: id, fields: fields.map(f => f.split('=')[0]) });
+        res.json({ success: true });
+      });
+    }
+  });
+});
+
+// 删除用户
+app.delete('/api/admin/user/:id', (req, res) => {
+  const { id } = req.params;
+  
+  // 检查用户是否存在及是否有相关数据
+  db.query('SELECT real_name, role FROM user WHERE id=?', [id], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    
+    const user = rows[0];
+    
+    // 检查是否有未完成的预约
+    db.query(`SELECT COUNT(*) as count FROM reservation WHERE (student_id=? OR coach_id=?) AND status IN ('pending', 'confirmed') AND start_time > NOW()`, 
+             [id, id], (err, rows) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      if (rows[0].count > 0) {
+        return res.status(400).json({ error: '该用户有未完成的预约，无法删除' });
+      }
+      
+      // 开始删除相关数据
+      db.beginTransaction((err) => {
+        if (err) return res.status(500).json({ error: '事务开始失败' });
+        
+        // 删除相关数据
+        const deleteQueries = [
+          `DELETE FROM coach_student WHERE student_id=? OR coach_id=?`,
+          `DELETE FROM message WHERE recipient_id=?`,
+          `DELETE FROM account WHERE user_id=?`,
+          `DELETE FROM \`transaction\` WHERE user_id=?`,
+          `DELETE FROM review WHERE student_id=? OR coach_id=?`,
+          `DELETE FROM tournament_registration WHERE student_id=?`,
+          `DELETE FROM coach_change_request WHERE student_id=? OR current_coach_id=? OR new_coach_id=?`,
+          `DELETE FROM user WHERE id=?`
+        ];
+        
+        let completed = 0;
+        const total = deleteQueries.length;
+        
+        deleteQueries.forEach((query, index) => {
+          let params;
+          if (index === 0 || index === 5) params = [id, id]; // coach_student, review
+          else if (index === 6) params = [id, id, id]; // coach_change_request
+          else params = [id];
+          
+          db.query(query, params, (err, result) => {
+            if (err) {
+              return db.rollback(() => {
+                res.status(500).json({ error: '删除失败' });
+              });
+            }
+            
+            completed++;
+            if (completed === total) {
+              db.commit((err) => {
+                if (err) {
+                  return db.rollback(() => {
+                    res.status(500).json({ error: '提交事务失败' });
+                  });
+                }
+                
+                logAudit('admin_user_delete', null, { user_id: id, real_name: user.real_name, role: user.role });
+                res.json({ success: true });
+              });
+            }
+          });
+        });
+      });
+    });
+  });
+});
+
+// 切换用户状态
+app.put('/api/admin/user/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  
+  if (!['active', 'inactive', 'banned'].includes(status)) {
+    return res.status(400).json({ error: '无效的状态值' });
+  }
+  
+  db.query('SELECT real_name FROM user WHERE id=?', [id], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    
+    const real_name = rows[0].real_name;
+    
+    db.query('UPDATE user SET status=? WHERE id=?', [status, id], (err, result) => {
+      if (err) return res.status(500).json({ error: '更新失败' });
+      
+      // 发送状态变更通知
+      const statusText = { active: '已激活', inactive: '已停用', banned: '已禁用' }[status];
+      db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '账户状态更新', CONCAT('您的账户状态已更新为：', ?))`, 
+               [id, statusText]);
+      
+      logAudit('admin_user_status_change', null, { user_id: id, real_name, new_status: status });
+      res.json({ success: true });
+    });
   });
 });
 
@@ -1153,6 +1789,234 @@ app.get('/api/reservations', (req, res) => {
   db.query(sql, params, (err, rows) => {
     if (err) return res.status(500).json({ error: '查询失败' });
     res.json(rows);
+  });
+});
+
+// 管理员获取预约列表（分页）
+app.get('/api/admin/reservations', (req, res) => {
+  const { campus_id, status, from, to, page = 1, limit = 15 } = req.query;
+  let where = ['r.campus_id=?'];
+  let params = [campus_id];
+  
+  if (status) { where.push('r.status=?'); params.push(status); }
+  if (from) { where.push('r.start_time>=?'); params.push(from); }
+  if (to) { where.push('r.start_time<=?'); params.push(to); }
+  
+  // 计算总数
+  const countSql = `SELECT COUNT(*) as total FROM reservation r WHERE ${where.join(' AND ')}`;
+  db.query(countSql, params, (err, countResult) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    
+    const total = countResult[0].total;
+    const offset = (page - 1) * limit;
+    
+    // 获取分页数据
+    const sql = `SELECT r.*, s.real_name AS student_name, c.real_name AS coach_name, t.code AS table_code
+                 FROM reservation r 
+                 LEFT JOIN user s ON r.student_id=s.id 
+                 LEFT JOIN user c ON r.coach_id=c.id 
+                 LEFT JOIN table_court t ON r.table_id=t.id
+                 WHERE ${where.join(' AND ')} ORDER BY r.start_time DESC LIMIT ? OFFSET ?`;
+    
+    db.query(sql, [...params, parseInt(limit), offset], (err, rows) => {
+      if (err) return res.status(500).json({ error: '查询失败' });
+      res.json({ success: true, reservations: rows, total });
+    });
+  });
+});
+
+// 管理员搜索预约
+app.get('/api/admin/reservations/search', (req, res) => {
+  const { campus_id, keyword } = req.query;
+  if (!campus_id || !keyword) return res.status(400).json({ error: '缺少参数' });
+  
+  const sql = `SELECT r.*, s.real_name AS student_name, c.real_name AS coach_name, t.code AS table_code
+               FROM reservation r 
+               LEFT JOIN user s ON r.student_id=s.id 
+               LEFT JOIN user c ON r.coach_id=c.id 
+               LEFT JOIN table_court t ON r.table_id=t.id
+               WHERE r.campus_id=? AND (s.real_name LIKE ? OR c.real_name LIKE ?)
+               ORDER BY r.start_time DESC`;
+  
+  db.query(sql, [campus_id, `%${keyword}%`, `%${keyword}%`], (err, rows) => {
+    if (err) return res.status(500).json({ error: '搜索失败' });
+    res.json({ success: true, reservations: rows });
+  });
+});
+
+// 管理员获取预约统计数
+app.get('/api/admin/reservations/count', (req, res) => {
+  const { campus_id, status, from, to } = req.query;
+  let where = ['campus_id=?'];
+  let params = [campus_id];
+  
+  if (status) { where.push('status=?'); params.push(status); }
+  if (from) { where.push('start_time>=?'); params.push(from); }
+  if (to) { where.push('start_time<=?'); params.push(to); }
+  
+  const sql = `SELECT COUNT(*) as count FROM reservation WHERE ${where.join(' AND ')}`;
+  
+  db.query(sql, params, (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    res.json({ count: rows[0].count });
+  });
+});
+
+// 管理员获取单个预约详情
+app.get('/api/admin/reservation/:id', (req, res) => {
+  const { id } = req.params;
+  
+  const sql = `SELECT r.*, s.real_name AS student_name, s.phone AS student_phone,
+               c.real_name AS coach_name, c.phone AS coach_phone, t.code AS table_code
+               FROM reservation r 
+               LEFT JOIN user s ON r.student_id=s.id 
+               LEFT JOIN user c ON r.coach_id=c.id 
+               LEFT JOIN table_court t ON r.table_id=t.id
+               WHERE r.id=?`;
+  
+  db.query(sql, [id], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (rows.length === 0) return res.status(404).json({ error: '预约不存在' });
+    res.json({ success: true, reservation: rows[0] });
+  });
+});
+
+// 管理员修改预约
+app.put('/api/admin/reservation/:id', (req, res) => {
+  const { id } = req.params;
+  const { start_time, duration, table_id, reason, admin_id } = req.body;
+  
+  if (!start_time || !duration || !reason || !admin_id) {
+    return res.status(400).json({ error: '缺少必填字段' });
+  }
+  
+  // 检查预约是否存在
+  db.query('SELECT * FROM reservation WHERE id=?', [id], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (rows.length === 0) return res.status(404).json({ error: '预约不存在' });
+    
+    const reservation = rows[0];
+    const endTime = new Date(new Date(start_time).getTime() + duration * 60 * 60 * 1000);
+    
+    // 检查球台冲突（如果指定了球台）
+    if (table_id) {
+      const conflictSql = `SELECT id FROM reservation WHERE table_id=? AND id!=? AND status IN ('confirmed', 'pending') 
+                          AND ((start_time <= ? AND end_time > ?) OR (start_time < ? AND end_time >= ?))`;
+      
+      db.query(conflictSql, [table_id, id, start_time, start_time, endTime, endTime], (err, conflicts) => {
+        if (err) return res.status(500).json({ error: '冲突检查失败' });
+        if (conflicts.length > 0) return res.status(400).json({ error: '选定时间段球台已被占用' });
+        
+        proceedWithUpdate();
+      });
+    } else {
+      proceedWithUpdate();
+    }
+    
+    function proceedWithUpdate() {
+      // 重新计算费用
+      db.query('SELECT hourly_fee FROM user WHERE id=?', [reservation.coach_id], (err, coachRows) => {
+        if (err) return res.status(500).json({ error: '查询教练信息失败' });
+        
+        const hourlyFee = coachRows[0]?.hourly_fee || 80;
+        const newFee = hourlyFee * duration;
+        
+        // 更新预约
+        const updateSql = `UPDATE reservation SET start_time=?, end_time=?, duration=?, table_id=?, fee=? WHERE id=?`;
+        db.query(updateSql, [start_time, endTime, duration, table_id, newFee, id], (err, result) => {
+          if (err) return res.status(500).json({ error: '更新失败' });
+          
+          // 通知相关人员
+          const message = `管理员修改了您的预约信息。修改原因：${reason}。新的上课时间：${new Date(start_time).toLocaleString()}`;
+          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '预约信息变更', ?)`, 
+                   [reservation.student_id, message]);
+          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '预约信息变更', ?)`, 
+                   [reservation.coach_id, message]);
+          
+          logAudit('admin_reservation_update', admin_id, { reservation_id: id, reason, original_time: reservation.start_time, new_time: start_time });
+          res.json({ success: true });
+        });
+      });
+    }
+  });
+});
+
+// 管理员取消预约
+app.post('/api/admin/reservation/:id/cancel', (req, res) => {
+  const { id } = req.params;
+  const { reason, admin_id } = req.body;
+  
+  if (!reason || !admin_id) {
+    return res.status(400).json({ error: '缺少取消原因或管理员ID' });
+  }
+  
+  // 检查预约状态
+  db.query('SELECT * FROM reservation WHERE id=?', [id], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (rows.length === 0) return res.status(404).json({ error: '预约不存在' });
+    
+    const reservation = rows[0];
+    
+    if (reservation.status === 'cancelled' || reservation.status === 'completed') {
+      return res.status(400).json({ error: '该预约已经取消或完成，无法再次取消' });
+    }
+    
+    // 取消预约并退款
+    db.beginTransaction((err) => {
+      if (err) return res.status(500).json({ error: '事务开始失败' });
+      
+      // 更新预约状态
+      db.query('UPDATE reservation SET status=?, cancel_reason=? WHERE id=?', 
+               ['cancelled', `管理员取消：${reason}`, id], (err) => {
+        if (err) {
+          return db.rollback(() => {
+            res.status(500).json({ error: '取消失败' });
+          });
+        }
+        
+        // 退款（如果已支付）
+        if (reservation.status === 'confirmed') {
+          db.query(`UPDATE account SET balance=balance+? WHERE user_id=?`, 
+                   [reservation.fee, reservation.student_id], (err) => {
+            if (err) {
+              return db.rollback(() => {
+                res.status(500).json({ error: '退款失败' });
+              });
+            }
+            
+            // 记录退款交易
+            db.query(`INSERT INTO \`transaction\` (user_id, amount, type, description) VALUES (?, ?, 'refund', ?)`,
+                     [reservation.student_id, reservation.fee, `预约${id}管理员取消退款`], (err) => {
+              if (err) console.error('退款记录失败:', err);
+              
+              completeCancel();
+            });
+          });
+        } else {
+          completeCancel();
+        }
+        
+        function completeCancel() {
+          // 通知相关人员
+          const message = `管理员取消了您的预约。取消原因：${reason}${reservation.status === 'confirmed' ? '。课时费已退回您的账户。' : ''}`;
+          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '预约已取消', ?)`, 
+                   [reservation.student_id, message]);
+          db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, '预约已取消', ?)`, 
+                   [reservation.coach_id, `管理员取消了学员的预约。取消原因：${reason}`]);
+          
+          db.commit((err) => {
+            if (err) {
+              return db.rollback(() => {
+                res.status(500).json({ error: '提交事务失败' });
+              });
+            }
+            
+            logAudit('admin_reservation_cancel', admin_id, { reservation_id: id, reason });
+            res.json({ success: true });
+          });
+        }
+      });
+    });
   });
 });
 
@@ -2018,7 +2882,7 @@ app.post('/api/coach/change-request', (req, res) => {
       if (coaches.length === 0) return res.status(400).json({ error: '目标教练不存在或不可用' });
       
       // 创建更换申请
-      const sql = `INSERT INTO coach_change_requests (student_id, current_coach_id, new_coach_id, reason, status) 
+      const sql = `INSERT INTO coach_change_request (student_id, current_coach_id, new_coach_id, reason, status) 
                    VALUES (?, ?, ?, ?, 'pending')`;
       db.query(sql, [student_id, current_coach_id, new_coach_id, reason || ''], (err, result) => {
         if (err) return res.status(500).json({ error: '申请提交失败' });
@@ -2514,6 +3378,739 @@ app.post('/api/license/renew', (req, res) => {
     });
   });
 });
+
+// ==================== 月赛管理 API ====================
+
+// 创建月赛表结构（如果不存在）
+function ensureTournamentTables() {
+  const createTournamentTable = `
+    CREATE TABLE IF NOT EXISTS tournament (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      name VARCHAR(100) NOT NULL,
+      campus_id INT NOT NULL,
+      group_category ENUM('甲','乙','丙') NOT NULL,
+      tournament_date DATE NOT NULL,
+      registration_deadline DATE NOT NULL,
+      registration_fee DECIMAL(10,2) DEFAULT 30.00,
+      description TEXT,
+      status ENUM('registration','scheduled','in_progress','completed','cancelled') DEFAULT 'registration',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (campus_id) REFERENCES campus(id)
+    )
+  `;
+  
+  const createRegistrationTable = `
+    CREATE TABLE IF NOT EXISTS tournament_registration (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      tournament_id INT NOT NULL,
+      student_id INT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_registration (tournament_id, student_id),
+      FOREIGN KEY (tournament_id) REFERENCES tournament(id),
+      FOREIGN KEY (student_id) REFERENCES user(id)
+    )
+  `;
+  
+  const createMatchTable = `
+    CREATE TABLE IF NOT EXISTS tournament_match (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      tournament_id INT NOT NULL,
+      round_number INT NOT NULL,
+      match_number INT NOT NULL,
+      player1_id INT,
+      player2_id INT,
+      table_id INT,
+      match_time DATETIME,
+      score_player1 INT DEFAULT 0,
+      score_player2 INT DEFAULT 0,
+      winner_id INT,
+      status ENUM('scheduled','in_progress','completed','cancelled') DEFAULT 'scheduled',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (tournament_id) REFERENCES tournament(id),
+      FOREIGN KEY (player1_id) REFERENCES user(id),
+      FOREIGN KEY (player2_id) REFERENCES user(id),
+      FOREIGN KEY (table_id) REFERENCES table_court(id),
+      FOREIGN KEY (winner_id) REFERENCES user(id)
+    )
+  `;
+  
+  db.query(createTournamentTable, (err) => {
+    if (err) console.error('创建tournament表失败:', err);
+  });
+  
+  db.query(createRegistrationTable, (err) => {
+    if (err) console.error('创建tournament_registration表失败:', err);
+  });
+  
+  db.query(createMatchTable, (err) => {
+    if (err) console.error('创建tournament_match表失败:', err);
+  });
+}
+
+// 初始化月赛表
+ensureTournamentTables();
+
+// 获取月赛列表
+app.get('/api/admin/tournaments', (req, res) => {
+  const { campus_id, status, group, month } = req.query;
+  let where = ['t.campus_id=?'];
+  let params = [campus_id];
+  
+  if (status) { where.push('t.status=?'); params.push(status); }
+  if (group) { where.push('t.group_category=?'); params.push(group); }
+  if (month) {
+    where.push('DATE_FORMAT(t.tournament_date, "%Y-%m")=?');
+    params.push(month);
+  }
+  
+  const sql = `
+    SELECT t.*, COUNT(tr.id) as registration_count
+    FROM tournament t
+    LEFT JOIN tournament_registration tr ON t.id = tr.tournament_id
+    WHERE ${where.join(' AND ')}
+    GROUP BY t.id
+    ORDER BY t.tournament_date DESC
+  `;
+  
+  db.query(sql, params, (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    res.json({ success: true, tournaments: rows });
+  });
+});
+
+// 获取月赛统计
+app.get('/api/admin/tournament-stats', (req, res) => {
+  const { campus_id, month } = req.query;
+  
+  const queries = [
+    // 本月赛事数
+    `SELECT COUNT(*) as current_month FROM tournament WHERE campus_id=? AND DATE_FORMAT(tournament_date, "%Y-%m")=?`,
+    // 总报名人数
+    `SELECT COUNT(*) as total_registrations FROM tournament_registration tr 
+     JOIN tournament t ON tr.tournament_id=t.id WHERE t.campus_id=?`,
+    // 进行中的赛事
+    `SELECT COUNT(*) as active FROM tournament WHERE campus_id=? AND status IN ('registration','scheduled','in_progress')`,
+    // 已完成的赛事
+    `SELECT COUNT(*) as completed FROM tournament WHERE campus_id=? AND status='completed'`
+  ];
+  
+  Promise.all([
+    new Promise((resolve, reject) => db.query(queries[0], [campus_id, month], (err, rows) => err ? reject(err) : resolve(rows[0]))),
+    new Promise((resolve, reject) => db.query(queries[1], [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0]))),
+    new Promise((resolve, reject) => db.query(queries[2], [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0]))),
+    new Promise((resolve, reject) => db.query(queries[3], [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0])))
+  ]).then(results => {
+    const stats = {
+      current_month: results[0].current_month,
+      total_registrations: results[1].total_registrations,
+      active: results[2].active,
+      completed: results[3].completed
+    };
+    res.json({ success: true, stats });
+  }).catch(err => {
+    res.status(500).json({ error: '统计查询失败' });
+  });
+});
+
+// 创建月赛
+app.post('/api/admin/tournament', (req, res) => {
+  const { name, group_category, tournament_date, registration_deadline, registration_fee, description, campus_id } = req.body;
+  
+  if (!name || !group_category || !tournament_date || !registration_deadline || !campus_id) {
+    return res.status(400).json({ error: '缺少必填字段' });
+  }
+  
+  // 检查同组别是否已有同月赛事
+  const checkSql = `SELECT id FROM tournament WHERE campus_id=? AND group_category=? 
+                   AND DATE_FORMAT(tournament_date, "%Y-%m") = DATE_FORMAT(?, "%Y-%m")
+                   AND status != 'cancelled'`;
+  
+  db.query(checkSql, [campus_id, group_category, tournament_date], (err, existing) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (existing.length > 0) {
+      return res.status(400).json({ error: '该组别本月已有赛事' });
+    }
+    
+    const sql = `INSERT INTO tournament (name, campus_id, group_category, tournament_date, 
+                 registration_deadline, registration_fee, description) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    
+    db.query(sql, [name, campus_id, group_category, tournament_date, registration_deadline, 
+                   registration_fee || 30, description], (err, result) => {
+      if (err) return res.status(500).json({ error: '创建失败' });
+      
+      logAudit('tournament_create', null, { tournament_id: result.insertId, name, group_category });
+      res.json({ success: true, tournament_id: result.insertId });
+    });
+  });
+});
+
+// 获取月赛详情
+app.get('/api/admin/tournament/:id', (req, res) => {
+  const { id } = req.params;
+  
+  // 获取赛事信息
+  const tournamentSql = 'SELECT * FROM tournament WHERE id=?';
+  
+  // 获取报名信息
+  const registrationSql = `
+    SELECT tr.*, u.real_name as student_name, u.gender, u.age
+    FROM tournament_registration tr
+    JOIN user u ON tr.student_id = u.id
+    WHERE tr.tournament_id = ?
+    ORDER BY tr.created_at
+  `;
+  
+  db.query(tournamentSql, [id], (err, tournaments) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (tournaments.length === 0) return res.status(404).json({ error: '赛事不存在' });
+    
+    db.query(registrationSql, [id], (err, registrations) => {
+      if (err) return res.status(500).json({ error: '查询报名信息失败' });
+      
+      res.json({ 
+        success: true, 
+        tournament: tournaments[0], 
+        registrations 
+      });
+    });
+  });
+});
+
+// 生成赛程
+app.post('/api/admin/tournament/:id/schedule', (req, res) => {
+  const { id } = req.params;
+  
+  // 获取参赛选手
+  const sql = `
+    SELECT tr.student_id, u.real_name as player_name
+    FROM tournament_registration tr
+    JOIN user u ON tr.student_id = u.id
+    WHERE tr.tournament_id = ?
+    ORDER BY tr.created_at
+  `;
+  
+  db.query(sql, [id], (err, players) => {
+    if (err) return res.status(500).json({ error: '查询参赛选手失败' });
+    if (players.length === 0) return res.status(400).json({ error: '没有参赛选手' });
+    
+    // 生成循环赛程
+    const schedule = generateRoundRobinSchedule(players);
+    
+    res.json({ success: true, schedule });
+  });
+});
+
+// 生成循环赛制函数
+function generateRoundRobinSchedule(players) {
+  const playerCount = players.length;
+  const rounds = [];
+  
+  if (playerCount <= 1) return { rounds: [] };
+  
+  // 如果是奇数，添加一个"轮空"选手
+  let playersWithBye = [...players];
+  if (playerCount % 2 === 1) {
+    playersWithBye.push({ student_id: null, player_name: '轮空' });
+  }
+  
+  const totalPlayers = playersWithBye.length;
+  const roundCount = totalPlayers - 1;
+  
+  for (let round = 0; round < roundCount; round++) {
+    const matches = [];
+    
+    for (let match = 0; match < totalPlayers / 2; match++) {
+      const home = (round + match) % (totalPlayers - 1);
+      const away = (totalPlayers - 1 - match + round) % (totalPlayers - 1);
+      
+      // 最后一个位置固定
+      if (match === 0) {
+        const player1 = playersWithBye[totalPlayers - 1];
+        const player2 = playersWithBye[away];
+        
+        if (player1.student_id && player2.student_id) {
+          matches.push({
+            player1_id: player1.student_id,
+            player1_name: player1.player_name,
+            player2_id: player2.student_id,
+            player2_name: player2.player_name,
+            table_code: null
+          });
+        }
+      } else {
+        const player1 = playersWithBye[home];
+        const player2 = playersWithBye[away];
+        
+        if (player1.student_id && player2.student_id) {
+          matches.push({
+            player1_id: player1.student_id,
+            player1_name: player1.player_name,
+            player2_id: player2.student_id,
+            player2_name: player2.player_name,
+            table_code: null
+          });
+        }
+      }
+    }
+    
+    if (matches.length > 0) {
+      rounds.push({ round_number: round + 1, matches });
+    }
+  }
+  
+  return { rounds };
+}
+
+// 确认并保存赛程
+app.post('/api/admin/tournament/:id/confirm-schedule', (req, res) => {
+  const { id } = req.params;
+  
+  // 更新赛事状态为已安排
+  db.query('UPDATE tournament SET status="scheduled" WHERE id=?', [id], (err, result) => {
+    if (err) return res.status(500).json({ error: '更新状态失败' });
+    
+    logAudit('tournament_schedule_confirmed', null, { tournament_id: id });
+    res.json({ success: true });
+  });
+});
+
+// 开始比赛
+app.post('/api/admin/tournament/:id/start', (req, res) => {
+  const { id } = req.params;
+  
+  db.query('UPDATE tournament SET status="in_progress" WHERE id=?', [id], (err, result) => {
+    if (err) return res.status(500).json({ error: '开始比赛失败' });
+    
+    logAudit('tournament_started', null, { tournament_id: id });
+    res.json({ success: true });
+  });
+});
+
+// 取消月赛
+app.post('/api/admin/tournament/:id/cancel', (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  
+  if (!reason) return res.status(400).json({ error: '请提供取消原因' });
+  
+  // 获取赛事和报名信息
+  const sql = `
+    SELECT t.*, tr.student_id, t.registration_fee
+    FROM tournament t
+    LEFT JOIN tournament_registration tr ON t.id = tr.tournament_id
+    WHERE t.id = ?
+  `;
+  
+  db.query(sql, [id], (err, rows) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
+    if (rows.length === 0) return res.status(404).json({ error: '赛事不存在' });
+    
+    const tournament = rows[0];
+    const registrations = rows.filter(row => row.student_id);
+    
+    db.beginTransaction((err) => {
+      if (err) return res.status(500).json({ error: '事务开始失败' });
+      
+      // 更新赛事状态
+      db.query('UPDATE tournament SET status="cancelled" WHERE id=?', [id], (err) => {
+        if (err) {
+          return db.rollback(() => {
+            res.status(500).json({ error: '取消失败' });
+          });
+        }
+        
+        // 退还报名费
+        if (registrations.length > 0 && tournament.registration_fee > 0) {
+          const refundPromises = registrations.map(reg => {
+            return new Promise((resolve, reject) => {
+              // 更新账户余额
+              db.query('UPDATE account SET balance = balance + ? WHERE user_id = ?', 
+                      [tournament.registration_fee, reg.student_id], (err) => {
+                if (err) return reject(err);
+                
+                // 记录退款交易
+                db.query(`INSERT INTO \`transaction\` (user_id, amount, type, description) 
+                         VALUES (?, ?, 'refund', ?)`,
+                        [reg.student_id, tournament.registration_fee, `月赛取消退款：${tournament.name}`], (err) => {
+                  if (err) console.error('退款记录失败:', err);
+                  
+                  // 发送通知
+                  db.query(`INSERT INTO message (recipient_id, title, content) 
+                           VALUES (?, '月赛取消通知', ?)`,
+                          [reg.student_id, `月赛"${tournament.name}"已取消。取消原因：${reason}。报名费已退回您的账户。`], (err) => {
+                    if (err) console.error('通知发送失败:', err);
+                    resolve();
+                  });
+                });
+              });
+            });
+          });
+          
+          Promise.all(refundPromises).then(() => {
+            db.commit((err) => {
+              if (err) {
+                return db.rollback(() => {
+                  res.status(500).json({ error: '提交事务失败' });
+                });
+              }
+              
+              logAudit('tournament_cancelled', null, { tournament_id: id, reason });
+              res.json({ success: true });
+            });
+          }).catch(err => {
+            db.rollback(() => {
+              res.status(500).json({ error: '退款处理失败' });
+            });
+          });
+        } else {
+          db.commit((err) => {
+            if (err) {
+              return db.rollback(() => {
+                res.status(500).json({ error: '提交事务失败' });
+              });
+            }
+            
+            logAudit('tournament_cancelled', null, { tournament_id: id, reason });
+            res.json({ success: true });
+          });
+        }
+      });
+    });
+  });
+});
+
+// ==================== 统计报表 API ====================
+
+// 总览统计
+app.get('/api/admin/statistics/overview', (req, res) => {
+  const { campus_id } = req.query;
+  
+  const queries = {
+    total_users: 'SELECT COUNT(*) as count FROM user WHERE campus_id=?',
+    students: 'SELECT COUNT(*) as count FROM user WHERE campus_id=? AND role="student"',
+    coaches: 'SELECT COUNT(*) as count FROM user WHERE campus_id=? AND role="coach"',
+    total_reservations: 'SELECT COUNT(*) as count FROM reservation WHERE campus_id=?',
+    monthly_reservations: 'SELECT COUNT(*) as count FROM reservation WHERE campus_id=? AND DATE_FORMAT(created_at, "%Y-%m")=DATE_FORMAT(NOW(), "%Y-%m")',
+    coach_levels: `SELECT coach_level, COUNT(*) as count FROM user WHERE campus_id=? AND role="coach" AND coach_level IS NOT NULL GROUP BY coach_level`
+  };
+  
+  Promise.all([
+    new Promise((resolve, reject) => db.query(queries.total_users, [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.students, [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.coaches, [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.total_reservations, [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.monthly_reservations, [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.coach_levels, [campus_id], (err, rows) => err ? reject(err) : resolve(rows)))
+  ]).then(results => {
+    const data = {
+      total_users: results[0],
+      students: results[1],
+      coaches: results[2],
+      total_reservations: results[3],
+      monthly_reservations: results[4],
+      coach_levels: {
+        labels: results[5].map(row => row.coach_level),
+        values: results[5].map(row => row.count)
+      }
+    };
+    
+    res.json({ success: true, data });
+  }).catch(err => {
+    console.error('统计查询失败:', err);
+    res.status(500).json({ error: '统计查询失败' });
+  });
+});
+
+// 月度报表
+app.get('/api/admin/statistics/monthly', (req, res) => {
+  const { campus_id, month } = req.query;
+  
+  const yearMonth = month || new Date().toISOString().slice(0, 7);
+  
+  const queries = {
+    reservations: `
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) as cancelled,
+        AVG(duration) as avg_duration
+      FROM reservation 
+      WHERE campus_id=? AND DATE_FORMAT(start_time, "%Y-%m")=?
+    `,
+    daily_distribution: `
+      SELECT 
+        DAY(start_time) as day,
+        COUNT(*) as count
+      FROM reservation 
+      WHERE campus_id=? AND DATE_FORMAT(start_time, "%Y-%m")=?
+      GROUP BY DAY(start_time)
+      ORDER BY day
+    `
+  };
+  
+  Promise.all([
+    new Promise((resolve, reject) => db.query(queries.reservations, [campus_id, yearMonth], (err, rows) => err ? reject(err) : resolve(rows[0]))),
+    new Promise((resolve, reject) => db.query(queries.daily_distribution, [campus_id, yearMonth], (err, rows) => err ? reject(err) : resolve(rows)))
+  ]).then(results => {
+    const reservationStats = results[0];
+    const dailyData = results[1];
+    
+    const data = {
+      reservations: {
+        total: reservationStats.total || 0,
+        completed: reservationStats.completed || 0,
+        cancel_rate: reservationStats.total > 0 ? Math.round((reservationStats.cancelled || 0) / reservationStats.total * 100) : 0,
+        avg_duration: Math.round((reservationStats.avg_duration || 0) * 10) / 10
+      },
+      daily_distribution: {
+        labels: dailyData.map(row => `${yearMonth}-${String(row.day).padStart(2, '0')}`),
+        values: dailyData.map(row => row.count)
+      }
+    };
+    
+    res.json({ success: true, data });
+  }).catch(err => {
+    console.error('月度统计查询失败:', err);
+    res.status(500).json({ error: '月度统计查询失败' });
+  });
+});
+
+// 用户统计
+app.get('/api/admin/statistics/user', (req, res) => {
+  const { campus_id } = req.query;
+  
+  const queries = {
+    user_distribution: `
+      SELECT role, COUNT(*) as count 
+      FROM user 
+      WHERE campus_id=? AND role IN ('student', 'coach')
+      GROUP BY role
+    `,
+    registration_trend: `
+      SELECT 
+        DATE_FORMAT(created_at, "%Y-%m") as month,
+        COUNT(*) as count
+      FROM user 
+      WHERE campus_id=? AND created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+      GROUP BY DATE_FORMAT(created_at, "%Y-%m")
+      ORDER BY month
+    `
+  };
+  
+  Promise.all([
+    new Promise((resolve, reject) => db.query(queries.user_distribution, [campus_id], (err, rows) => err ? reject(err) : resolve(rows))),
+    new Promise((resolve, reject) => db.query(queries.registration_trend, [campus_id], (err, rows) => err ? reject(err) : resolve(rows)))
+  ]).then(results => {
+    const userDist = results[0];
+    const regTrend = results[1];
+    
+    const data = {
+      user_distribution: {
+        labels: userDist.map(row => row.role === 'student' ? '学员' : '教练'),
+        values: userDist.map(row => row.count)
+      },
+      registration_trend: {
+        labels: regTrend.map(row => row.month),
+        values: regTrend.map(row => row.count)
+      },
+      students: {
+        total: userDist.find(row => row.role === 'student')?.count || 0
+      },
+      coaches: {
+        total: userDist.find(row => row.role === 'coach')?.count || 0
+      }
+    };
+    
+    res.json({ success: true, data });
+  }).catch(err => {
+    console.error('用户统计查询失败:', err);
+    res.status(500).json({ error: '用户统计查询失败' });
+  });
+});
+
+// 预约统计
+app.get('/api/admin/statistics/reservation', (req, res) => {
+  const { campus_id } = req.query;
+  
+  const queries = {
+    overview: `
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) as cancelled,
+        AVG(duration) as avg_duration
+      FROM reservation 
+      WHERE campus_id=?
+    `,
+    status_distribution: `
+      SELECT status, COUNT(*) as count
+      FROM reservation 
+      WHERE campus_id=?
+      GROUP BY status
+    `,
+    popular_times: `
+      SELECT 
+        HOUR(start_time) as hour,
+        COUNT(*) as count
+      FROM reservation 
+      WHERE campus_id=?
+      GROUP BY HOUR(start_time)
+      ORDER BY hour
+    `
+  };
+  
+  Promise.all([
+    new Promise((resolve, reject) => db.query(queries.overview, [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0]))),
+    new Promise((resolve, reject) => db.query(queries.status_distribution, [campus_id], (err, rows) => err ? reject(err) : resolve(rows))),
+    new Promise((resolve, reject) => db.query(queries.popular_times, [campus_id], (err, rows) => err ? reject(err) : resolve(rows)))
+  ]).then(results => {
+    const overview = results[0];
+    const statusDist = results[1];
+    const popularTimes = results[2];
+    
+    const data = {
+      total: overview.total || 0,
+      completed: overview.completed || 0,
+      cancel_rate: overview.total > 0 ? Math.round((overview.cancelled || 0) / overview.total * 100) : 0,
+      avg_duration: Math.round((overview.avg_duration || 0) * 10) / 10,
+      status_distribution: {
+        labels: statusDist.map(row => getStatusText(row.status)),
+        values: statusDist.map(row => row.count)
+      },
+      popular_times: {
+        labels: popularTimes.map(row => `${row.hour}:00`),
+        values: popularTimes.map(row => row.count)
+      }
+    };
+    
+    res.json({ success: true, data });
+  }).catch(err => {
+    console.error('预约统计查询失败:', err);
+    res.status(500).json({ error: '预约统计查询失败' });
+  });
+});
+
+// 财务统计
+app.get('/api/admin/statistics/financial', (req, res) => {
+  const { campus_id } = req.query;
+  
+  const queries = {
+    lesson_revenue: `
+      SELECT SUM(fee) as revenue
+      FROM reservation 
+      WHERE campus_id=? AND status='completed'
+    `,
+    tournament_revenue: `
+      SELECT SUM(t.registration_fee * subq.reg_count) as revenue
+      FROM tournament t
+      JOIN (
+        SELECT tournament_id, COUNT(*) as reg_count
+        FROM tournament_registration
+        GROUP BY tournament_id
+      ) subq ON t.id = subq.tournament_id
+      WHERE t.campus_id=?
+    `,
+    recharge_amount: `
+      SELECT SUM(amount) as total
+      FROM \`transaction\` tr
+      JOIN user u ON tr.user_id = u.id
+      WHERE u.campus_id=? AND tr.type='recharge'
+    `
+  };
+  
+  Promise.all([
+    new Promise((resolve, reject) => db.query(queries.lesson_revenue, [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0]?.revenue || 0))),
+    new Promise((resolve, reject) => db.query(queries.tournament_revenue, [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0]?.revenue || 0))),
+    new Promise((resolve, reject) => db.query(queries.recharge_amount, [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0]?.total || 0)))
+  ]).then(results => {
+    const lessonRevenue = results[0];
+    const tournamentRevenue = results[1];
+    const rechargeAmount = results[2];
+    
+    const data = {
+      lesson_revenue: lessonRevenue,
+      tournament_revenue: tournamentRevenue,
+      recharge_amount: rechargeAmount,
+      total_revenue: lessonRevenue + tournamentRevenue,
+      revenue_sources: {
+        labels: ['课时费', '月赛报名费'],
+        values: [lessonRevenue, tournamentRevenue]
+      }
+    };
+    
+    res.json({ success: true, data });
+  }).catch(err => {
+    console.error('财务统计查询失败:', err);
+    res.status(500).json({ error: '财务统计查询失败' });
+  });
+});
+
+// 月赛统计
+app.get('/api/admin/statistics/tournament', (req, res) => {
+  const { campus_id } = req.query;
+  
+  const queries = {
+    overview: `
+      SELECT 
+        COUNT(*) as total_tournaments,
+        SUM(subq.reg_count) as total_participants,
+        AVG(subq.reg_count) as avg_participants,
+        SUM(t.registration_fee * subq.reg_count) as registration_revenue
+      FROM tournament t
+      LEFT JOIN (
+        SELECT tournament_id, COUNT(*) as reg_count
+        FROM tournament_registration
+        GROUP BY tournament_id
+      ) subq ON t.id = subq.tournament_id
+      WHERE t.campus_id=?
+    `,
+    group_participation: `
+      SELECT 
+        t.group_category,
+        COUNT(tr.id) as participants
+      FROM tournament t
+      LEFT JOIN tournament_registration tr ON t.id = tr.tournament_id
+      WHERE t.campus_id=?
+      GROUP BY t.group_category
+    `
+  };
+  
+  Promise.all([
+    new Promise((resolve, reject) => db.query(queries.overview, [campus_id], (err, rows) => err ? reject(err) : resolve(rows[0]))),
+    new Promise((resolve, reject) => db.query(queries.group_participation, [campus_id], (err, rows) => err ? reject(err) : resolve(rows)))
+  ]).then(results => {
+    const overview = results[0];
+    const groupData = results[1];
+    
+    const data = {
+      total_tournaments: overview.total_tournaments || 0,
+      total_participants: overview.total_participants || 0,
+      avg_participants: Math.round((overview.avg_participants || 0) * 10) / 10,
+      registration_revenue: overview.registration_revenue || 0,
+      group_participation: {
+        labels: groupData.map(row => `${row.group_category}组`),
+        values: groupData.map(row => row.participants || 0)
+      }
+    };
+    
+    res.json({ success: true, data });
+  }).catch(err => {
+    console.error('月赛统计查询失败:', err);
+    res.status(500).json({ error: '月赛统计查询失败' });
+  });
+});
+
+function getStatusText(status) {
+  const statusMap = {
+    'pending': '待确认',
+    'confirmed': '已确认',
+    'completed': '已完成',
+    'cancelled': '已取消',
+    'rejected': '已拒绝'
+  };
+  return statusMap[status] || status;
+}
 
 // 检查授权状态中间件
 function checkLicense(req, res, next) {

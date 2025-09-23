@@ -69,6 +69,11 @@ INSERT INTO user (username, password_hash, real_name, gender, age, campus_id, ph
 ('coach009', '123456', '陈梦', '女', 30, 2, '13900000009', 'coach009@ttclub.com', 'coach', 'active', 'junior', '区级乒乓球比赛冠军，体育教师资格', 80.00),
 ('coach010', '123456', '孙颖莎', '女', 26, 3, '13900000010', 'coach010@ttclub.com', 'coach', 'active', 'junior', '大学乒乓球队主力，教练员培训结业', 80.00),
 
+-- 待审核教练员
+('pending001', '123456', '李教练', '男', 32, 1, '13900000011', 'pending001@ttclub.com', 'coach', 'pending', 'middle', '市级乒乓球比赛冠军，五年教学经验', 150.00),
+('pending002', '123456', '王教练', '女', 29, 1, '13900000012', 'pending002@ttclub.com', 'coach', 'pending', 'junior', '体育专业毕业，教练资格证', 80.00),
+('pending003', '123456', '张教练', '男', 35, 2, '13900000013', 'pending003@ttclub.com', 'coach', 'pending', 'senior', '前国家队选手，全国冠军', 200.00),
+
 -- 学员数据
 ('student001', '123456', '小明', '男', 12, 1, '13700000001', 'xiaoming@student.com', 'student', 'active', NULL, NULL, NULL),
 ('student002', '123456', '小红', '女', 10, 1, '13700000002', 'xiaohong@student.com', 'student', 'active', NULL, NULL, NULL),
