@@ -74,16 +74,23 @@ CREATE TABLE IF NOT EXISTS reservation (
   table_id INT,
   start_time DATETIME NOT NULL,
   end_time DATETIME NOT NULL,
-  status ENUM('pending','confirmed','rejected','canceled','completed') DEFAULT 'pending',
+  status ENUM('pending','confirmed','rejected','canceled','completed','cancel_requested') DEFAULT 'pending',
   cancel_request_by ENUM('student','coach', 'none') DEFAULT 'none',
+  cancel_request_time DATETIME NULL,
+  cancel_confirm_time DATETIME NULL,
+  cancel_reason TEXT NULL,
   cancel_count_month_student INT DEFAULT 0,
   cancel_count_month_coach INT DEFAULT 0,
+  payment_id INT NULL,
+  payment_refunded BOOLEAN DEFAULT FALSE,
   reminded TINYINT(1) DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (campus_id) REFERENCES campus(id),
   FOREIGN KEY (coach_id) REFERENCES user(id),
   FOREIGN KEY (student_id) REFERENCES user(id),
-  FOREIGN KEY (table_id) REFERENCES table_court(id)
+  FOREIGN KEY (table_id) REFERENCES table_court(id),
+  FOREIGN KEY (payment_id) REFERENCES transaction(id) ON DELETE SET NULL
 );
 
 -- 账户与支付

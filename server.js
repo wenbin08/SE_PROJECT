@@ -1487,7 +1487,7 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
           if (hasCurrentCoachApproval && hasNewCoachApproval && hasAdminApproval) {
             console.log('三方均已同意，执行教练更换');
             // 执行教练更换
-            executeCoachChangeAfterApproval(req.student_id, req.current_coach_id, req.new_coach_id, id, res);
+            executeCoachChange(req.student_id, req.current_coach_id, req.new_coach_id, id, res);
           } else {
             // 发送进度消息给学员
             const approvalStatus = [];
@@ -1509,8 +1509,8 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
   });
 });
 
-// 执行教练更换（三方同意后）
-function executeCoachChangeAfterApproval(studentId, currentCoachId, newCoachId, requestId, res) {
+// 执行教练更换
+function executeCoachChange(studentId, currentCoachId, newCoachId, requestId, res) {
   // 1. 更新coach_student表
   db.query(`UPDATE coach_student SET coach_id=? WHERE student_id=? AND coach_id=? AND status='approved'`, 
     [newCoachId, studentId, currentCoachId], (err) => {

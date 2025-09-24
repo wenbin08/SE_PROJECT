@@ -400,37 +400,10 @@
             'rejected': '已拒绝'
           };
           
-          // 更详细地检查教练响应状态
-          const currentCoachAgreed = req.current_coach_response && req.current_coach_response !== '拒绝';
-          const newCoachAgreed = req.new_coach_response && req.new_coach_response !== '拒绝';
-          
           // 检查两位教练是否都已同意
-          const bothCoachesApproved = currentCoachAgreed && newCoachAgreed;
-          
-          // 显示操作按钮的逻辑
+          const bothCoachesApproved = req.current_coach_response && req.new_coach_response &&
+                                    req.current_coach_response !== '拒绝' && req.new_coach_response !== '拒绝';
           const canApprove = bothCoachesApproved && req.status !== 'admin_approved';
-          
-          // 计算每个教练的状态显示
-          const getCoachResponseBadge = (response) => {
-            if (!response) return '<span class="badge badge-secondary">未响应</span>';
-            if (response === '拒绝') return '<span class="badge badge-danger">已拒绝</span>';
-            return '<span class="badge badge-success">已同意</span>';
-          };
-          
-          // 计算当前申请进度
-          let progressText = '';
-          if (req.status === 'admin_approved') {
-            progressText = '已批准';
-          } else if (req.status === 'rejected') {
-            progressText = '已拒绝';
-          } else if (bothCoachesApproved) {
-            progressText = '<span class="text-success">教练均已同意，可批准</span>';
-          } else {
-            const pendingCoaches = [];
-            if (!currentCoachAgreed) pendingCoaches.push('当前教练');
-            if (!newCoachAgreed) pendingCoaches.push('新教练');
-            progressText = `等待${pendingCoaches.join('和')}响应`;
-          }
           
           return `
             <tr>
@@ -439,15 +412,15 @@
               <td>${req.current_coach_name}</td>
               <td>${req.new_coach_name}</td>
               <td title="${req.reason}">${req.reason ? req.reason.substring(0, 15) + '...' : '无'}</td>
-              <td>${getCoachResponseBadge(req.current_coach_response)}</td>
-              <td>${getCoachResponseBadge(req.new_coach_response)}</td>
+              <td><span class="badge ${req.current_coach_response ? 'badge-success' : 'badge-secondary'}">${req.current_coach_response ? '已同意' : '待响应'}</span></td>
+              <td><span class="badge ${req.new_coach_response ? 'badge-success' : 'badge-secondary'}">${req.new_coach_response ? '已同意' : '待响应'}</span></td>
               <td><span class="badge ${req.status === 'pending' ? 'badge-warning' : req.status === 'rejected' ? 'badge-danger' : req.status === 'admin_approved' ? 'badge-success' : 'badge-info'}">${statusMap[req.status] || req.status}</span></td>
               <td>${new Date(req.created_at).toLocaleString()}</td>
               <td>
                 ${canApprove ? `
                   <button class="btn btn-sm btn-success" onclick="adminApproveChangeRequest(${req.id}, true)">最终批准</button>
                   <button class="btn btn-sm btn-danger ml-1" onclick="adminApproveChangeRequest(${req.id}, false)">拒绝</button>
-                ` : progressText}
+                ` : req.status === 'admin_approved' ? '已批准' : bothCoachesApproved ? '教练均已同意，可批准' : '等待教练响应'}
                 <button class="btn btn-sm btn-info ml-1" onclick="viewChangeRequestDetails(${req.id})">详情</button>
               </td>
             </tr>
