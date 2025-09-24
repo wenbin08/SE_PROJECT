@@ -1418,6 +1418,7 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
       }
       
 <<<<<<< HEAD
+<<<<<<< HEAD
       // 4. 如果同意，更新响应并设置对应的状态
       let newStatus = 'pending'; // 默认状态
       if (user_role === 'coach') {
@@ -1433,6 +1434,8 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
       db.query(`UPDATE coach_change_request SET ${updateField}=?, status=? WHERE id=?`, 
         [response_text || '同意', newStatus, id], (err) => {
 =======
+=======
+>>>>>>> parent of f291bff (fix bugs)
       // 4. 如果同意，更新响应并检查是否三方都同意
       db.query(`UPDATE coach_change_request SET ${updateField}=? WHERE id=?`, 
         [response_text || '同意', id], (err) => {

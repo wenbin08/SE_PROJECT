@@ -345,10 +345,14 @@
           };
           
 <<<<<<< HEAD
+<<<<<<< HEAD
           // 检查两位教练是否都已同意
           const bothCoachesApproved = req.current_coach_response && req.new_coach_response &&
                                     req.current_coach_response !== '拒绝' && req.new_coach_response !== '拒绝';
           const canApprove = bothCoachesApproved && req.status !== 'admin_approved';
+=======
+          const canApprove = req.status === 'current_coach_approved' || req.status === 'new_coach_approved';
+>>>>>>> parent of f291bff (fix bugs)
 =======
           const canApprove = req.status === 'current_coach_approved' || req.status === 'new_coach_approved';
 >>>>>>> parent of f291bff (fix bugs)
@@ -361,9 +365,15 @@
               <td>${req.new_coach_name}</td>
               <td title="${req.reason}">${req.reason ? req.reason.substring(0, 15) + '...' : '无'}</td>
 <<<<<<< HEAD
+<<<<<<< HEAD
               <td><span class="badge ${req.current_coach_response ? 'badge-success' : 'badge-secondary'}">${req.current_coach_response ? '已同意' : '待响应'}</span></td>
               <td><span class="badge ${req.new_coach_response ? 'badge-success' : 'badge-secondary'}">${req.new_coach_response ? '已同意' : '待响应'}</span></td>
               <td><span class="badge ${req.status === 'pending' ? 'badge-warning' : req.status === 'rejected' ? 'badge-danger' : req.status === 'admin_approved' ? 'badge-success' : 'badge-info'}">${statusMap[req.status] || req.status}</span></td>
+=======
+              <td><span class="badge ${req.current_coach_response ? 'badge-success' : 'badge-secondary'}">${req.current_coach_response ? '已响应' : '待响应'}</span></td>
+              <td><span class="badge ${req.new_coach_response ? 'badge-success' : 'badge-secondary'}">${req.new_coach_response ? '已响应' : '待响应'}</span></td>
+              <td><span class="badge ${req.status === 'pending' ? 'badge-warning' : req.status === 'rejected' ? 'badge-danger' : 'badge-info'}">${statusMap[req.status] || req.status}</span></td>
+>>>>>>> parent of f291bff (fix bugs)
 =======
               <td><span class="badge ${req.current_coach_response ? 'badge-success' : 'badge-secondary'}">${req.current_coach_response ? '已响应' : '待响应'}</span></td>
               <td><span class="badge ${req.new_coach_response ? 'badge-success' : 'badge-secondary'}">${req.new_coach_response ? '已响应' : '待响应'}</span></td>
@@ -375,7 +385,11 @@
                   <button class="btn btn-sm btn-success" onclick="adminApproveChangeRequest(${req.id}, true)">最终批准</button>
                   <button class="btn btn-sm btn-danger ml-1" onclick="adminApproveChangeRequest(${req.id}, false)">拒绝</button>
 <<<<<<< HEAD
+<<<<<<< HEAD
                 ` : req.status === 'admin_approved' ? '已批准' : bothCoachesApproved ? '教练均已同意，可批准' : '等待教练响应'}
+=======
+                ` : req.status === 'admin_approved' ? '已处理' : '等待教练响应'}
+>>>>>>> parent of f291bff (fix bugs)
 =======
                 ` : req.status === 'admin_approved' ? '已处理' : '等待教练响应'}
 >>>>>>> parent of f291bff (fix bugs)
