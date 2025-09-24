@@ -431,16 +431,26 @@
     
     async function loadMyReservations(status = 'all') {
       try {
+        console.log("查询预约，学员ID:", studentData.id); // 调试信息
+        
+        // 构建查询URL
         let url = `/api/reservations?student_id=${studentData.id}`;
         if (status !== 'all') {
           url += `&status=${status}`;
         }
         
+        console.log("查询URL:", url); // 调试信息
         const res = await fetch(url);
+        
+        if (!res.ok) {
+          throw new Error(`HTTP error! Status: ${res.status}`);
+        }
+        
         const reservations = await res.json();
+        console.log("预约数据:", reservations); // 调试信息
         
         const tbody = document.getElementById('myReservationsList');
-        if (reservations.length === 0) {
+        if (!Array.isArray(reservations) || reservations.length === 0) {
           tbody.innerHTML = '<tr><td colspan="6" class="text-center">暂无预约记录</td></tr>';
           return;
         }
@@ -448,7 +458,7 @@
         tbody.innerHTML = reservations.map(res => `
           <tr>
             <td>${res.id}</td>
-            <td>${res.coach_name}</td>
+            <td>${res.coach_name || '未知教练'}</td>
             <td>${new Date(res.start_time).toLocaleString()}</td>
             <td>${res.table_code || '-'}</td>
             <td>${getStatusBadge(res.status)}</td>
@@ -460,9 +470,21 @@
         document.querySelectorAll('.btn-group button').forEach(btn => {
           btn.classList.remove('active');
         });
-        event.target.classList.add('active');
+        
+        // 修复按钮状态更新，使用正确的事件目标
+        const buttons = document.querySelectorAll('.btn-group button');
+        buttons.forEach(btn => {
+          if (btn.innerText.toLowerCase().includes(status === 'all' ? '全部' : 
+              status === 'pending' ? '待确认' : 
+              status === 'confirmed' ? '已确认' : 
+              status === 'completed' ? '已完成' : '')) {
+            btn.classList.add('active');
+          }
+        });
       } catch (error) {
-        document.getElementById('myReservationsList').innerHTML = '<tr><td colspan="6" class="text-center text-danger">加载失败</td></tr>';
+        console.error("查询预约失败:", error); // 调试信息
+        document.getElementById('myReservationsList').innerHTML = 
+          `<tr><td colspan="6" class="text-center text-danger">加载失败: ${error.message}</td></tr>`;
       }
     }
     
@@ -478,22 +500,33 @@
     }
     
     function getActionButtons(reservation) {
-      if (reservation.status === 'confirmed') {
+      // 对于已确认的预约，检查是否可以取消（距离开始时间24小时以上）
+      if (reservation.status === 'confirmed' || reservation.status === 'pending') {
         const now = new Date();
         const startTime = new Date(reservation.start_time);
         const timeDiff = startTime - now;
         
         if (timeDiff > 24 * 3600 * 1000) { // 24小时以上
-          return `<button class="btn btn-sm btn-warning" onclick="cancelReservation(${reservation.id})">取消</button>`;
+          return `<button class="btn btn-sm btn-warning" onclick="cancelReservation(${reservation.id})">取消预约</button>`;
+        } else {
+          // 提示不可取消的原因
+          return `<span class="text-muted" title="距离开始时间小于24小时，不可取消">不可取消</span>`;
         }
+      } else if (reservation.status === 'completed') {
+        // 对于已完成的课程，可以添加"评价"按钮
+        return `<a href="/reviews.html?reservation_id=${reservation.id}" class="btn btn-sm btn-info">评价</a>`;
+      } else if (reservation.status === 'canceled') {
+        // 已取消的预约
+        return `<span class="text-muted">已取消</span>`;
       }
       return '-';
     }
     
     async function cancelReservation(id) {
-      if (!confirm('确定要取消这个预约吗？')) return;
+      if (!confirm('确定要取消这个预约吗？\n\n注意：\n1. 每月最多取消3次预约\n2. 取消需要对方确认\n3. 确认后将退款到账户')) return;
       
       try {
+        console.log("发送取消请求，预约ID:", id);
         const res = await fetch(`/api/reservations/${id}/cancel`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -501,27 +534,33 @@
         });
         
         const data = await res.json();
+        console.log("取消响应:", data);
         
         if (!res.ok || !data.success) {
-          alert(data.error || '取消失败');
+          alert(data.error || '取消失败，请稍后再试');
           return;
         }
         
         if (data.pending_confirm) {
-          alert('取消申请已提交，等待教练确认');
+          alert('取消申请已提交，等待教练确认。\n确认后系统将自动退款。');
         } else {
-          alert('预约已取消');
+          alert('预约已取消成功！');
         }
         
+        // 刷新预约列表和取消配额
         loadMyReservations('all');
         loadCancelQuota();
       } catch (error) {
-        alert('取消失败');
+        console.error("取消预约错误:", error);
+        alert('取消失败: ' + (error.message || '未知错误'));
       }
     }
     
     function logout() {
+      // 清除所有可能的用户数据存储
       localStorage.removeItem('userData');
+      localStorage.removeItem('user');
+      localStorage.removeItem('email');
       window.location.href = '/';
     }
     
@@ -533,14 +572,21 @@
     
     // 页面加载时检查登录状态
     window.onload = function() {
-      studentData = JSON.parse(localStorage.getItem('userData') || '{}');
-      if (!studentData.id || studentData.role !== 'student') {
+      // 支持两种不同的登录方式，兼容旧版登录系统
+      const user = JSON.parse(localStorage.getItem('user') || 'null');
+      const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+      
+      if (user && user.id && user.role === 'student') {
+        studentData = user;
+      } else if (userData && userData.id && userData.role === 'student') {
+        studentData = userData;
+      } else {
         alert('请先登录');
         window.location.href = '/';
         return;
       }
       
-      document.getElementById('userInfo').textContent = `学员：${studentData.real_name}`;
+      document.getElementById('userInfo').textContent = `学员：${studentData.real_name || studentData.name || studentData.username}`;
       
       // 设置默认时间（明天9点到10点）
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
@@ -549,6 +595,8 @@
       
       document.getElementById('startTime').value = tomorrowStart.toISOString().slice(0, 16);
       document.getElementById('endTime').value = tomorrowEnd.toISOString().slice(0, 16);
+      
+      console.log("学员ID:", studentData.id); // 调试信息
       
       // 加载数据
       loadAccountBalance();
