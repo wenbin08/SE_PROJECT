@@ -1382,57 +1382,133 @@ app.get('/api/student/coach-change-info', (req, res) => {
 // 教练/管理员响应更换申请
 app.post('/api/coach-change-request/:id/respond', (req, res) => {
   const { id } = req.params;
-  const { user_id, user_role, approve, response_text } = req.body;
+  let { user_id, user_role, approve, response_text } = req.body;
   
-  if (!user_id || !user_role || approve === undefined) {
-    return res.status(400).json({ error: '缺少参数' });
+  // 调试日志：记录原始请求参数
+  console.log('[教练更换响应] 原始参数:', { id, user_id, user_role, approve, response_text });
+  
+  // 处理approve参数的各种可能格式
+  if (typeof approve === 'string') {
+    if (approve.toLowerCase() === 'true') {
+      approve = true;
+    } else if (approve.toLowerCase() === 'false') {
+      approve = false;
+    }
   }
   
-  // 1. 获取申请详情
-  db.query(`SELECT * FROM coach_change_request WHERE id=? AND status='pending'`, 
-    [id], (err, requests) => {
+  // 转换user_id为数字
+  if (user_id && typeof user_id === 'string') {
+    user_id = parseInt(user_id);
+  }
+  
+  // 参数校验
+  if (!user_id || !user_role || (approve !== true && approve !== false)) {
+    console.log('[教练更换响应] 参数校验失败:', { 
+      user_id, 
+      user_role, 
+      approve, 
+      user_id_type: typeof user_id,
+      user_role_type: typeof user_role,
+      approve_type: typeof approve 
+    });
+    return res.status(400).json({ 
+      error: '缺少参数', 
+      debug: { 
+        user_id, 
+        user_role, 
+        approve, 
+        user_id_type: typeof user_id,
+        user_role_type: typeof user_role,
+        approve_type: typeof approve,
+        expected: 'user_id: number, user_role: string, approve: boolean'
+      }
+    });
+  }
+  
+  console.log('[教练更换响应] 参数校验通过:', { id, user_id, user_role, approve });
+  
+  // 1. 先不带状态过滤读取申请，避免因状态判断导致误判“申请不存在”
+  db.query(`SELECT * FROM coach_change_request WHERE id=?`, [id], (err, requests) => {
     if (err) return res.status(500).json({ error: '查询失败' });
     if (!requests || requests.length === 0) {
-      return res.status(400).json({ error: '申请不存在或已处理' });
+      return res.status(400).json({ error: '申请不存在', debug: { id } });
+    }
+
+    const request = requests[0];
+
+    // 如果已经被拒绝或已完成，直接提示
+    if (request.status === 'rejected' || request.status === 'completed') {
+      return res.status(409).json({ 
+        error: '申请已结束，无法继续操作', 
+        debug: { 
+          id: request.id,
+            status: request.status,
+            current_coach_response: request.current_coach_response,
+            new_coach_response: request.new_coach_response,
+            admin_response: request.admin_response
+          }
+      });
     }
     
-    const request = requests[0];
-    
     // 2. 验证用户权限
-    let updateField = '';
-    let statusUpdate = '';
+  let updateField = '';
     
+    console.log('[教练更换响应] 申请详情:', {
+      requestId: id,
+      currentCoach: request.current_coach_id,
+      newCoach: request.new_coach_id,
+      student: request.student_id,
+      status: request.status
+    });
+    
+    // 防止同一个角色重复提交
     if (user_role === 'coach' && user_id == request.current_coach_id) {
+      if (request.current_coach_response) {
+        return res.status(409).json({ error: '当前教练已响应', debug: { existing: request.current_coach_response }});
+      }
       updateField = 'current_coach_response';
-      statusUpdate = approve ? 'current_coach_approved' : 'rejected';
+      console.log('[教练更换响应] 当前教练处理:', { user_id, approve, updateField });
     } else if (user_role === 'coach' && user_id == request.new_coach_id) {
+      if (request.new_coach_response) {
+        return res.status(409).json({ error: '新教练已响应', debug: { existing: request.new_coach_response }});
+      }
       updateField = 'new_coach_response';
-      statusUpdate = approve ? 'new_coach_approved' : 'rejected';
+      console.log('[教练更换响应] 新教练处理:', { user_id, approve, updateField });
     } else if (user_role === 'campus_admin') {
       // 验证管理员是否管理该学员所在校区
       db.query(`SELECT u1.campus_id FROM user u1, user u2 
                 WHERE u1.id=? AND u2.id=? AND u1.campus_id=u2.campus_id AND u1.role='campus_admin'`, 
         [user_id, request.student_id], (err, adminCheck) => {
         if (err || !adminCheck || adminCheck.length === 0) {
+          console.log('[教练更换响应] 管理员权限验证失败:', { user_id, student_id: request.student_id });
           return res.status(403).json({ error: '无权限处理此申请' });
         }
         
+        if (request.admin_response) {
+          return res.status(409).json({ error: '管理员已响应', debug: { existing: request.admin_response }});
+        }
         updateField = 'admin_response';
-        statusUpdate = approve ? 'admin_approved' : 'rejected';
+        console.log('[教练更换响应] 管理员处理:', { user_id, approve, updateField });
         
         continueProcess();
       });
       return;
     } else {
+      console.log('[教练更换响应] 权限验证失败:', { 
+        user_role, 
+        user_id, 
+        current_coach_id: request.current_coach_id,
+        new_coach_id: request.new_coach_id
+      });
       return res.status(403).json({ error: '无权限处理此申请' });
     }
     
     continueProcess();
     
     function continueProcess() {
-      // 3. 如果拒绝，直接更新状态
+      // 3. 如果拒绝，记录拒绝并将状态置为rejected
       if (!approve) {
-        db.query(`UPDATE coach_change_request SET ${updateField}=?, status='rejected' WHERE id=?`, 
+        db.query(`UPDATE coach_change_request SET ${updateField}=?, status='rejected' WHERE id=?`,
           [response_text || '拒绝', id], (err) => {
           if (err) return res.status(500).json({ error: '更新失败' });
           
@@ -1448,20 +1524,9 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
         return;
       }
       
-      // 4. 如果同意，更新响应并设置对应的状态
-      let newStatus = 'pending'; // 默认状态
-      if (user_role === 'coach') {
-        if (user_id == request.current_coach_id) {
-          newStatus = 'current_coach_approved';
-        } else if (user_id == request.new_coach_id) {
-          newStatus = 'new_coach_approved';
-        }
-      } else if (user_role === 'campus_admin') {
-        newStatus = 'admin_approved';
-      }
-      
-      db.query(`UPDATE coach_change_request SET ${updateField}=?, status=? WHERE id=?`, 
-        [response_text || '同意', newStatus, id], (err) => {
+      // 4. 如果同意，只更新响应字段，状态保持原样（pending）直到所有方都同意
+      db.query(`UPDATE coach_change_request SET ${updateField}=? WHERE id=?`, 
+        [response_text || '同意', id], (err) => {
         if (err) return res.status(500).json({ error: '更新失败' });
         
         // 获取更新后的申请状态
@@ -1502,6 +1567,12 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
               });
             
             res.json({ success: true, message: '已记录您的同意，等待其他人员确认' });
+            console.log('[教练更换响应] 已记录同意，尚未全部完成', {
+              request_id: id,
+              hasCurrentCoachApproval,
+              hasNewCoachApproval,
+              hasAdminApproval
+            });
           }
         });
       });
@@ -3161,177 +3232,7 @@ app.post('/api/reviews/submit', (req, res) => {
   });
 });
 
-// 教练更换相关API
-
-// 申请更换教练
-app.post('/api/coach/change-request', (req, res) => {
-  const { student_id, current_coach_id, new_coach_id, reason } = req.body;
-  if (!student_id || !current_coach_id || !new_coach_id) {
-    return res.status(400).json({ error: '缺少必填参数' });
-  }
-  
-  // 验证双选关系存在
-  db.query('SELECT * FROM coach_student WHERE coach_id = ? AND student_id = ? AND status = "approved"', 
-    [current_coach_id, student_id], (err, relations) => {
-    if (err) return res.status(500).json({ error: '查询失败' });
-    if (relations.length === 0) return res.status(400).json({ error: '当前教练关系不存在' });
-    
-    // 检查新教练是否可选
-    db.query('SELECT * FROM user WHERE id = ? AND role = "coach" AND status = "active"', 
-      [new_coach_id], (err, coaches) => {
-      if (err) return res.status(500).json({ error: '查询失败' });
-      if (coaches.length === 0) return res.status(400).json({ error: '目标教练不存在或不可用' });
-      
-      // 创建更换申请
-      const sql = `INSERT INTO coach_change_request (student_id, current_coach_id, new_coach_id, reason, status) 
-                   VALUES (?, ?, ?, ?, 'pending')`;
-      db.query(sql, [student_id, current_coach_id, new_coach_id, reason || ''], (err, result) => {
-        if (err) return res.status(500).json({ error: '申请提交失败' });
-        
-        const requestId = result.insertId;
-        
-        // 发送消息给三方
-        const messages = [
-          { recipient_id: current_coach_id, title: '教练更换申请', content: `学员申请更换教练，申请ID: ${requestId}` },
-          { recipient_id: new_coach_id, title: '教练更换申请', content: `有学员申请将您设为新教练，申请ID: ${requestId}` }
-        ];
-        
-        // 获取校区管理员
-        db.query('SELECT u.id FROM user u JOIN user s ON s.campus_id = u.campus_id WHERE s.id = ? AND u.role = "campus_admin"', 
-          [student_id], (err, admins) => {
-          if (admins.length > 0) {
-            messages.push({ 
-              recipient_id: admins[0].id, 
-              title: '教练更换申请', 
-              content: `有学员申请更换教练，申请ID: ${requestId}` 
-            });
-          }
-          
-          // 批量发送消息，带错误处理
-          messages.forEach(msg => {
-            db.query(`INSERT INTO message (recipient_id, title, content) VALUES (?, ?, ?)`, 
-              [msg.recipient_id, msg.title, msg.content], (err) => {
-                if (err) console.error('发送教练更换申请消息失败:', err);
-              });
-          });
-        });
-        
-        logAudit('coach_change_request', student_id, { current_coach_id, new_coach_id });
-        res.json({ success: true, request_id: requestId });
-      });
-    });
-  });
-});
-
-// 处理教练更换申请
-app.post('/api/coach/change-request/:id/respond', (req, res) => {
-  const requestId = req.params.id;
-  const { user_id, user_type, approve, response_text } = req.body;
-  
-  if (!user_id || !user_type || approve === undefined) {
-    return res.status(400).json({ error: '缺少参数' });
-  }
-  
-  // 获取申请详情
-  db.query('SELECT * FROM coach_change_request WHERE id = ? AND status = "pending"', [requestId], (err, requests) => {
-    if (err) return res.status(500).json({ error: '查询失败' });
-    if (requests.length === 0) return res.status(404).json({ error: '申请不存在或已处理' });
-    
-    const request = requests[0];
-    let updateField, newStatus;
-    
-    // 根据用户类型确定更新字段和状态
-    if (user_type === 'current_coach') {
-      updateField = 'current_coach_response';
-      newStatus = approve ? 'current_coach_approved' : 'rejected';
-    } else if (user_type === 'new_coach') {
-      updateField = 'new_coach_response';
-      newStatus = approve ? 'new_coach_approved' : 'rejected';
-    } else if (user_type === 'admin') {
-      updateField = 'admin_response';
-      newStatus = approve ? 'admin_approved' : 'rejected';
-    } else {
-      return res.status(400).json({ error: '无效的用户类型' });
-    }
-    
-    // 验证用户权限
-    if ((user_type === 'current_coach' && request.current_coach_id !== parseInt(user_id)) ||
-        (user_type === 'new_coach' && request.new_coach_id !== parseInt(user_id))) {
-      return res.status(403).json({ error: '无权限处理此申请' });
-    }
-    
-    if (!approve) {
-      // 拒绝申请
-      const sql = `UPDATE coach_change_request SET ${updateField} = ?, status = 'rejected' WHERE id = ?`;
-      db.query(sql, [response_text || '拒绝', requestId], (err) => {
-        if (err) return res.status(500).json({ error: '更新失败' });
-        
-        sendMessage(request.student_id, '教练更换申请被拒绝', `您的教练更换申请已被拒绝。原因：${response_text || '无'}`);
-        logAudit('coach_change_rejected', user_id, { request_id: requestId, reason: response_text });
-        res.json({ success: true });
-      });
-    } else {
-      // 同意申请
-      const sql = `UPDATE coach_change_request SET ${updateField} = ?, status = ? WHERE id = ?`;
-      db.query(sql, [response_text || '同意', newStatus, requestId], (err) => {
-        if (err) return res.status(500).json({ error: '更新失败' });
-        
-        // 检查是否所有相关方都已同意
-        db.query('SELECT * FROM coach_change_request WHERE id = ?', [requestId], (err, updated) => {
-          if (err) return res.status(500).json({ error: '查询失败' });
-          
-          const req = updated[0];
-          // 如果当前教练、新教练和管理员都已同意，执行更换
-          if (req.status === 'current_coach_approved' && 
-              req.new_coach_response && req.new_coach_response !== '拒绝' &&
-              req.admin_response && req.admin_response !== '拒绝') {
-            executeCoachChange(req.student_id, req.current_coach_id, req.new_coach_id, requestId, res);
-          } else {
-            res.json({ success: true, message: '等待其他相关人员确认' });
-          }
-        });
-      });
-    }
-  });
-});
-
-// 执行教练更换
-function executeCoachChange(studentId, currentCoachId, newCoachId, requestId, res) {
-  // 更新双选关系
-  db.query('UPDATE coach_student SET coach_id = ? WHERE student_id = ? AND coach_id = ?', 
-    [newCoachId, studentId, currentCoachId], (err) => {
-    if (err) return res.status(500).json({ error: '更换失败' });
-    
-    // 更新申请状态为已完成
-    db.query('UPDATE coach_change_request SET status = "admin_approved" WHERE id = ?', [requestId], (err) => {
-      if (err) console.error('更新申请状态失败:', err);
-      
-      // 发送成功消息
-      sendMessage(studentId, '教练更换成功', '您的教练更换申请已通过并生效');
-      sendMessage(currentCoachId, '学员教练更换通知', '学员已更换教练');
-      sendMessage(newCoachId, '新学员通知', '您有新的学员');
-      
-      logAudit('coach_change_success', studentId, { old_coach: currentCoachId, new_coach: newCoachId });
-      res.json({ success: true });
-    });
-  });
-}
-
-// 辅助函数：检查是否为学员的校区管理员
-function isAdminForStudent(adminId, studentId) {
-  // 这里应该实现检查逻辑，暂时返回true
-  return true; // 简化实现
-}
-
-// 辅助函数：发送系统消息
-function sendMessage(recipientId, title, content) {
-  const sql = `INSERT INTO message (recipient_id, title, content, created_at) VALUES (?, ?, ?, NOW())`;
-  db.query(sql, [recipientId, title, content], (err, result) => {
-    if (err) {
-      console.error('发送消息失败:', err);
-    }
-  });
-}
+// （移除重复教练更换API实现，以上功能已由前面一套逻辑覆盖）
 
 // 课程提醒功能
 
@@ -4576,28 +4477,14 @@ app.get('/api/super-admin/statistics', (req, res) => {
 
 // 超级管理员获取所有用户
 app.get('/api/super-admin/users', (req, res) => {
-  const { search } = req.query;
-  
-  let sql = `
+  const sql = `
     SELECT u.*, c.name as campus_name 
     FROM user u 
     LEFT JOIN campus c ON u.campus_id = c.id 
+    ORDER BY u.created_at DESC
   `;
-  
-  const params = [];
-  if (search) {
-    sql += ` WHERE u.username LIKE ? OR u.real_name LIKE ? OR u.phone LIKE ?`;
-    const searchTerm = `%${search}%`;
-    params.push(searchTerm, searchTerm, searchTerm);
-  }
-  
-  sql += ` ORDER BY u.created_at DESC`;
-
-  db.query(sql, params, (err, results) => {
-    if (err) {
-      console.error("查询用户失败:", err);
-      return res.status(500).json({ error: '查询失败' });
-    }
+  db.query(sql, (err, results) => {
+    if (err) return res.status(500).json({ error: '查询失败' });
     res.json(results);
   });
 });

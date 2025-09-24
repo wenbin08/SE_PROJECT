@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>教练更换状态测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .badge { padding: 3px 8px; border-radius: 3px; color: white; font-size: 12px; }
+        .badge-success { background-color: #28a745; }
+        .badge-secondary { background-color: #6c757d; }
+        .badge-warning { background-color: #ffc107; color: black; }
+        button { margin: 2px; padding: 5px 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>教练更换状态测试页面</h1>
+        
+        <div class="section">
+            <h3>当前教练更换申请状态</h3>
+            <div id="requests-container">
+                <p>加载中...</p>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>模拟操作</h3>
+            <button onclick="simulateCurrentCoachApprove()">模拟当前教练同意</button>
+            <button onclick="simulateNewCoachApprove()">模拟未来教练同意</button>
+            <button onclick="simulateAdminApprove()">模拟管理员批准</button>
+            <button onclick="refreshStatus()">刷新状态</button>
+        </div>
+    </div>
+
+    <script>
+        // 检查登录状态并设置临时用户
+        function ensureLogin() {
+            if (!localStorage.getItem('userData')) {
+                // 设置一个临时的校区管理员用户用于测试
+                localStorage.setItem('userData', JSON.stringify({
+                    id: 2, // 假设ID=2是校区管理员
+                    role: 'campus_admin',
+                    username: 'test_admin'
+                }));
+            }
+        }
+
+        async function loadCoachChangeRequests() {
+            try {
+                ensureLogin();
+                
+                const response = await fetch('/api/coach-change-requests');
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || '加载失败');
+                }
+                
+                displayRequests(data.requests);
+            } catch (error) {
+                console.error('加载教练更换申请失败:', error);
+                document.getElementById('requests-container').innerHTML = 
+                    `<p style="color: red;">加载失败: ${error.message}</p>`;
+            }
+        }
+
+        function displayRequests(requests) {
+            if (!requests || requests.length === 0) {
+                document.getElementById('requests-container').innerHTML = '<p>暂无教练更换申请</p>';
+                return;
+            }
+
+            const html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>学员</th>
+                            <th>当前教练</th>
+                            <th>未来教练</th>
+                            <th>当前教练状态</th>
+                            <th>未来教练状态</th>
+                            <th>管理员状态</th>
+                            <th>系统状态</th>
+                            <th>创建时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${requests.map(req => {
+                            const currentCoachStatus = req.current_coach_response ? 
+                                (req.current_coach_response === '拒绝' ? '已拒绝' : '已同意') : '待响应';
+                            const newCoachStatus = req.new_coach_response ? 
+                                (req.new_coach_response === '拒绝' ? '已拒绝' : '已同意') : '待响应';
+                            const adminStatus = req.admin_response ? 
+                                (req.admin_response === '拒绝' ? '已拒绝' : '已批准') : '待响应';
+                            
+                            return `
+                                <tr>
+                                    <td>${req.id}</td>
+                                    <td>${req.student_name}</td>
+                                    <td>${req.current_coach_name}</td>
+                                    <td>${req.new_coach_name}</td>
+                                    <td><span class="badge ${req.current_coach_response ? 'badge-success' : 'badge-secondary'}">${currentCoachStatus}</span></td>
+                                    <td><span class="badge ${req.new_coach_response ? 'badge-success' : 'badge-secondary'}">${newCoachStatus}</span></td>
+                                    <td><span class="badge ${req.admin_response ? 'badge-success' : 'badge-secondary'}">${adminStatus}</span></td>
+                                    <td><span class="badge badge-warning">${req.status}</span></td>
+                                    <td>${new Date(req.created_at).toLocaleString()}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            document.getElementById('requests-container').innerHTML = html;
+        }
+
+        async function simulateCurrentCoachApprove() {
+            // 这里需要实际的申请ID，暂时用提示
+            alert('请在实际的教练门户中操作，或查看控制台了解当前状态');
+            console.log('当前教练同意操作 - 需要实际的申请ID和教练登录');
+        }
+
+        async function simulateNewCoachApprove() {
+            alert('请在实际的教练门户中操作，或查看控制台了解当前状态');
+            console.log('未来教练同意操作 - 需要实际的申请ID和教练登录');
+        }
+
+        async function simulateAdminApprove() {
+            alert('请在校区管理员页面操作，或查看控制台了解当前状态');
+            console.log('管理员批准操作 - 需要在campus_admin.html中操作');
+        }
+
+        function refreshStatus() {
+            loadCoachChangeRequests();
+        }
+
+        // 页面加载时获取数据
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCoachChangeRequests();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>教练更换状态检查</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .status-pending { background-color: #fff3cd; }
+        .status-completed { background-color: #d4edda; }
+        .status-rejected { background-color: #f8d7da; }
+        button { margin: 5px; padding: 8px 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>教练更换申请状态检查</h1>
+
+        <div style="margin: 20px 0;">
+            <button onclick="loadRequests()">刷新申请列表</button>
+            <button onclick="clearConsole()">清空控制台</button>
+        </div>
+
+        <div id="requests-container">
+            <p>点击"刷新申请列表"加载数据...</p>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>测试教练响应</h3>
+            <input type="number" id="testRequestId" placeholder="申请ID">
+            <select id="testCoachType">
+                <option value="current">当前教练</option>
+                <option value="new">未来教练</option>
+            </select>
+            <select id="testAction">
+                <option value="true">同意</option>
+                <option value="false">拒绝</option>
+            </select>
+            <input type="number" id="testUserId" placeholder="教练用户ID">
+            <button onclick="testRespond()">测试响应</button>
+        </div>
+    </div>
+
+    <script>
+        async function loadRequests() {
+            try {
+                const response = await fetch('/api/coach-change-requests?user_id=1&user_role=campus_admin');
+                const requests = await response.json();
+
+                console.log('获取到的申请列表:', requests);
+
+                if (!Array.isArray(requests)) {
+                    document.getElementById('requests-container').innerHTML = '<p>返回数据格式错误</p>';
+                    return;
+                }
+
+                if (requests.length === 0) {
+                    document.getElementById('requests-container').innerHTML = '<p>暂无教练更换申请</p>';
+                    return;
+                }
+
+                const html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>学员</th>
+                                <th>当前教练</th>
+                                <th>未来教练</th>
+                                <th>当前教练响应</th>
+                                <th>未来教练响应</th>
+                                <th>管理员响应</th>
+                                <th>系统状态</th>
+                                <th>创建时间</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${requests.map(req => `
+                                <tr class="status-${req.status}">
+                                    <td>${req.id}</td>
+                                    <td>${req.student_name}</td>
+                                    <td>${req.current_coach_name} (${req.current_coach_id})</td>
+                                    <td>${req.new_coach_name} (${req.new_coach_id})</td>
+                                    <td>${req.current_coach_response || '无'}</td>
+                                    <td>${req.new_coach_response || '无'}</td>
+                                    <td>${req.admin_response || '无'}</td>
+                                    <td>${req.status}</td>
+                                    <td>${new Date(req.created_at).toLocaleString()}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+
+                document.getElementById('requests-container').innerHTML = html;
+            } catch (error) {
+                console.error('加载失败:', error);
+                document.getElementById('requests-container').innerHTML = `<p style="color: red;">加载失败: ${error.message}</p>`;
+            }
+        }
+
+        async function testRespond() {
+            const requestId = document.getElementById('testRequestId').value;
+            const coachType = document.getElementById('testCoachType').value;
+            const approve = document.getElementById('testAction').value === 'true';
+            const userId = document.getElementById('testUserId').value;
+
+            if (!requestId || !userId) {
+                alert('请输入申请ID和教练用户ID');
+                return;
+            }
+
+            try {
+                console.log('测试响应参数:', { requestId, coachType, approve, userId });
+
+                const response = await fetch(`/api/coach-change-request/${requestId}/respond`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: parseInt(userId),
+                        user_role: 'coach',
+                        approve: approve,
+                        response_text: approve ? '测试同意' : '测试拒绝'
+                    })
+                });
+
+                const data = await response.json();
+                console.log('响应结果:', { status: response.status, data });
+
+                if (response.ok && data.success) {
+                    alert('操作成功');
+                    loadRequests();
+                } else {
+                    alert(`操作失败: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('测试失败:', error);
+                alert('测试失败: ' + error.message);
+            }
+        }
+
+        function clearConsole() {
+            console.clear();
+        }
+
+        // 页面加载时自动加载一次
+        document.addEventListener('DOMContentLoaded', function() {
+            // 设置临时管理员登录状态
+            if (!localStorage.getItem('userData')) {
+                localStorage.setItem('userData', JSON.stringify({
+                    id: 1,
+                    role: 'campus_admin',
+                    username: 'test_admin'
+                }));
+            }
+        });
+    </script>
+</body>
+</html>

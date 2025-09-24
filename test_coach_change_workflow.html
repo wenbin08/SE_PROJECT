@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>教练更换流程测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+        button { margin: 5px; padding: 8px 15px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        pre { background-color: #f5f5f5; padding: 10px; border-radius: 5px; overflow: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>教练更换流程测试工具</h1>
+        
+        <div class="section">
+            <h3>1. 配置测试用户</h3>
+            <div>
+                <label>学员ID: <input type="number" id="studentId" value=""></label><br>
+                <label>当前教练ID: <input type="number" id="currentCoachId" value=""></label><br>
+                <label>未来教练ID: <input type="number" id="newCoachId" value=""></label><br>
+                <label>校区管理员ID: <input type="number" id="adminId" value=""></label><br>
+                <button onclick="saveUserIds()">保存配置</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>2. 执行测试流程</h3>
+            <button onclick="createChangeRequest()">步骤1: 创建教练更换申请</button>
+            <button onclick="currentCoachRespond(true)">步骤2: 当前教练同意</button>
+            <button onclick="newCoachRespond(true)">步骤3: 未来教练同意</button>
+            <button onclick="adminRespond(true)">步骤4: 校区管理员同意</button>
+            <hr>
+            <button onclick="checkRequestStatus()">查看当前申请状态</button>
+            <button onclick="checkCoachRelationship()">验证教练-学员关系</button>
+        </div>
+        
+        <div class="section">
+            <h3>测试日志</h3>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        // 存储当前测试状态
+        let testState = {
+            studentId: null,
+            currentCoachId: null,
+            newCoachId: null,
+            adminId: null,
+            requestId: null,
+            userData: null
+        };
+
+        // 从localStorage加载已保存的状态
+        function loadTestState() {
+            const savedState = localStorage.getItem('coachChangeTestState');
+            if (savedState) {
+                testState = JSON.parse(savedState);
+                document.getElementById('studentId').value = testState.studentId || '';
+                document.getElementById('currentCoachId').value = testState.currentCoachId || '';
+                document.getElementById('newCoachId').value = testState.newCoachId || '';
+                document.getElementById('adminId').value = testState.adminId || '';
+            }
+        }
+
+        // 保存测试配置
+        function saveUserIds() {
+            testState.studentId = parseInt(document.getElementById('studentId').value) || null;
+            testState.currentCoachId = parseInt(document.getElementById('currentCoachId').value) || null;
+            testState.newCoachId = parseInt(document.getElementById('newCoachId').value) || null;
+            testState.adminId = parseInt(document.getElementById('adminId').value) || null;
+            
+            localStorage.setItem('coachChangeTestState', JSON.stringify(testState));
+            logMessage('配置已保存', 'success');
+        }
+
+        // 显示日志消息
+        function logMessage(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = type;
+            entry.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.insertBefore(entry, logDiv.firstChild);
+        }
+
+        // 显示API响应
+        function logResponse(action, response) {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = response.success ? 'success' : 'error';
+            
+            let message = `${action}: ${response.success ? '成功' : '失败'}`;
+            if (response.message) {
+                message += ` - ${response.message}`;
+            }
+            if (response.error) {
+                message += ` - 错误: ${response.error}`;
+            }
+            
+            entry.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            
+            // 添加详情展开/折叠
+            const detailsDiv = document.createElement('pre');
+            detailsDiv.textContent = JSON.stringify(response, null, 2);
+            entry.appendChild(detailsDiv);
+            
+            logDiv.insertBefore(entry, logDiv.firstChild);
+        }
+
+        // 设置用户身份
+        function setUserIdentity(userId, role) {
+            testState.userData = {
+                id: userId,
+                role: role
+            };
+            localStorage.setItem('userData', JSON.stringify(testState.userData));
+            logMessage(`已切换身份: ID=${userId}, 角色=${role}`, 'info');
+        }
+
+        // 创建教练更换申请
+        async function createChangeRequest() {
+            if (!testState.studentId || !testState.currentCoachId || !testState.newCoachId) {
+                return logMessage('请先配置用户ID', 'error');
+            }
+            
+            // 切换为学员身份
+            setUserIdentity(testState.studentId, 'student');
+            
+            try {
+                const response = await fetch('/api/student/request-coach-change', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        new_coach_id: testState.newCoachId,
+                        reason: '测试教练更换流程'
+                    })
+                });
+                
+                const data = await response.json();
+                logResponse('创建教练更换申请', data);
+                
+                if (data.success && data.requestId) {
+                    testState.requestId = data.requestId;
+                    localStorage.setItem('coachChangeTestState', JSON.stringify(testState));
+                }
+            } catch (error) {
+                logMessage(`创建申请失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 当前教练响应
+        async function currentCoachRespond(approve) {
+            if (!testState.requestId || !testState.currentCoachId) {
+                return logMessage('请先创建申请或配置当前教练ID', 'error');
+            }
+            
+            // 切换为当前教练身份
+            setUserIdentity(testState.currentCoachId, 'coach');
+            
+            try {
+                const response = await fetch(`/api/coach-change-request/${testState.requestId}/respond`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        approve: approve,
+                        response_text: approve ? '同意更换' : '不同意更换'
+                    })
+                });
+                
+                const data = await response.json();
+                logResponse('当前教练响应', data);
+                
+                // 自动刷新状态
+                setTimeout(checkRequestStatus, 500);
+            } catch (error) {
+                logMessage(`当前教练响应失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 未来教练响应
+        async function newCoachRespond(approve) {
+            if (!testState.requestId || !testState.newCoachId) {
+                return logMessage('请先创建申请或配置未来教练ID', 'error');
+            }
+            
+            // 切换为未来教练身份
+            setUserIdentity(testState.newCoachId, 'coach');
+            
+            try {
+                const response = await fetch(`/api/coach-change-request/${testState.requestId}/respond`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        approve: approve,
+                        response_text: approve ? '同意成为新教练' : '无法接受新学员'
+                    })
+                });
+                
+                const data = await response.json();
+                logResponse('未来教练响应', data);
+                
+                // 自动刷新状态
+                setTimeout(checkRequestStatus, 500);
+            } catch (error) {
+                logMessage(`未来教练响应失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 校区管理员响应
+        async function adminRespond(approve) {
+            if (!testState.requestId || !testState.adminId) {
+                return logMessage('请先创建申请或配置管理员ID', 'error');
+            }
+            
+            // 切换为管理员身份
+            setUserIdentity(testState.adminId, 'campus_admin');
+            
+            try {
+                const response = await fetch(`/api/coach-change-request/${testState.requestId}/respond`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        approve: approve,
+                        response_text: approve ? '同意此次教练变更' : '不同意此次变更'
+                    })
+                });
+                
+                const data = await response.json();
+                logResponse('校区管理员响应', data);
+                
+                // 自动刷新状态
+                setTimeout(checkRequestStatus, 500);
+            } catch (error) {
+                logMessage(`校区管理员响应失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 检查申请状态
+        async function checkRequestStatus() {
+            if (!testState.requestId) {
+                return logMessage('请先创建申请', 'error');
+            }
+            
+            try {
+                // 使用管理员身份查询状态
+                if (testState.adminId) {
+                    setUserIdentity(testState.adminId, 'campus_admin');
+                }
+                
+                const response = await fetch(`/api/coach-change-requests`);
+                const data = await response.json();
+                
+                if (data.success && data.requests) {
+                    const request = data.requests.find(r => r.id == testState.requestId);
+                    if (request) {
+                        const statusHtml = `
+                            <div>
+                                <strong>申请ID:</strong> ${request.id}<br>
+                                <strong>学员:</strong> ${request.student_name}<br>
+                                <strong>当前教练:</strong> ${request.current_coach_name} 
+                                    (${request.current_coach_response || '未响应'})<br>
+                                <strong>未来教练:</strong> ${request.new_coach_name}
+                                    (${request.new_coach_response || '未响应'})<br>
+                                <strong>管理员响应:</strong> ${request.admin_response || '未响应'}<br>
+                                <strong>状态:</strong> ${request.status}<br>
+                            </div>
+                        `;
+                        logMessage(`申请状态:<br>${statusHtml}`, 'info');
+                    } else {
+                        logMessage(`未找到申请ID: ${testState.requestId}`, 'error');
+                    }
+                } else {
+                    logResponse('查询申请状态', data);
+                }
+            } catch (error) {
+                logMessage(`查询申请状态失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 验证教练-学员关系
+        async function checkCoachRelationship() {
+            if (!testState.studentId) {
+                return logMessage('请先配置学员ID', 'error');
+            }
+            
+            // 使用学员身份查询关系
+            setUserIdentity(testState.studentId, 'student');
+            
+            try {
+                const response = await fetch(`/api/student/coach-info`);
+                const data = await response.json();
+                logResponse('查询教练-学员关系', data);
+            } catch (error) {
+                logMessage(`查询教练-学员关系失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载时恢复状态
+        document.addEventListener('DOMContentLoaded', function() {
+            loadTestState();
+        });
+    </script>
+</body>
+</html>

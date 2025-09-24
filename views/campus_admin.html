@@ -400,10 +400,13 @@
             'rejected': '已拒绝'
           };
           
-          // 检查两位教练是否都已同意
-          const bothCoachesApproved = req.current_coach_response && req.new_coach_response &&
-                                    req.current_coach_response !== '拒绝' && req.new_coach_response !== '拒绝';
-          const canApprove = bothCoachesApproved && req.status !== 'admin_approved';
+          // 检查两位教练是否都已同意 - 只根据response字段判断，不依赖status
+          const hasCurrentCoachApproval = req.current_coach_response && req.current_coach_response !== '拒绝';
+          const hasNewCoachApproval = req.new_coach_response && req.new_coach_response !== '拒绝';
+          const bothCoachesApproved = hasCurrentCoachApproval && hasNewCoachApproval;
+          // 只要两位教练都同意且管理员未审批，就可以批准
+          const hasAdminResponse = req.admin_response && req.admin_response !== '';
+          const canApprove = bothCoachesApproved && !hasAdminResponse;
           
           return `
             <tr>
@@ -412,15 +415,15 @@
               <td>${req.current_coach_name}</td>
               <td>${req.new_coach_name}</td>
               <td title="${req.reason}">${req.reason ? req.reason.substring(0, 15) + '...' : '无'}</td>
-              <td><span class="badge ${req.current_coach_response ? 'badge-success' : 'badge-secondary'}">${req.current_coach_response ? '已同意' : '待响应'}</span></td>
-              <td><span class="badge ${req.new_coach_response ? 'badge-success' : 'badge-secondary'}">${req.new_coach_response ? '已同意' : '待响应'}</span></td>
+              <td><span class="badge ${req.current_coach_response && req.current_coach_response !== '拒绝' ? 'badge-success' : req.current_coach_response === '拒绝' ? 'badge-danger' : 'badge-secondary'}">${req.current_coach_response ? (req.current_coach_response === '拒绝' ? '已拒绝' : '已同意') : '待响应'}</span></td>
+              <td><span class="badge ${req.new_coach_response && req.new_coach_response !== '拒绝' ? 'badge-success' : req.new_coach_response === '拒绝' ? 'badge-danger' : 'badge-secondary'}">${req.new_coach_response ? (req.new_coach_response === '拒绝' ? '已拒绝' : '已同意') : '待响应'}</span></td>
               <td><span class="badge ${req.status === 'pending' ? 'badge-warning' : req.status === 'rejected' ? 'badge-danger' : req.status === 'admin_approved' ? 'badge-success' : 'badge-info'}">${statusMap[req.status] || req.status}</span></td>
               <td>${new Date(req.created_at).toLocaleString()}</td>
               <td>
                 ${canApprove ? `
                   <button class="btn btn-sm btn-success" onclick="adminApproveChangeRequest(${req.id}, true)">最终批准</button>
                   <button class="btn btn-sm btn-danger ml-1" onclick="adminApproveChangeRequest(${req.id}, false)">拒绝</button>
-                ` : req.status === 'admin_approved' ? '已批准' : bothCoachesApproved ? '教练均已同意，可批准' : '等待教练响应'}
+                ` : req.admin_response ? (req.admin_response === '拒绝' ? '已拒绝' : '已批准') : bothCoachesApproved ? '教练均已同意，可批准' : '等待教练响应'}
                 <button class="btn btn-sm btn-info ml-1" onclick="viewChangeRequestDetails(${req.id})">详情</button>
               </td>
             </tr>
@@ -441,15 +444,20 @@
       }
       
       try {
+        const requestData = {
+          user_id: adminData.id,
+          user_role: 'campus_admin',
+          approve: approve,
+          response_text: response || ''
+        };
+        
+        console.log('[前端] 发送管理员更换响应:', requestData);
+        console.log('[前端] adminData:', adminData);
+        
         const res = await fetch(`/api/coach-change-request/${requestId}/respond`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: adminData.id,
-            user_role: 'campus_admin',
-            approve: approve,
-            response_text: response || ''
-          })
+          body: JSON.stringify(requestData)
         });
         
         const data = await res.json();
@@ -626,50 +634,26 @@
     // 获取操作类型的中文描述
     function getCampusActionText(action) {
       const actionMap = {
-        // 用户登录相关
         'user_login': '用户登录',
         'login_failed': '登录失败',
-        
-        // 用户注册相关
         'student_register': '学员注册',
         'coach_register': '教练注册',
-        
-        // 教练审核相关
         'coach_approve': '教练审核',
-        
-        // 教练选择相关
         'coach_select_request': '教练选择申请',
         'coach_select_approve': '教练选择审核',
-        
-        // 教练更换相关
-        'coach_change_request': '教练更换申请',
-        'coach_change_rejected': '教练更换拒绝',
-        'coach_change_success': '教练更换成功',
-        
-        // 预约相关
-        'reservation_create': '课程预约',
+        'reservation_create': '预约创建',
         'reservation_confirm': '预约确认',
         'reservation_reject': '预约拒绝',
         'reservation_complete': '预约完成',
         'reservation_cancel': '预约取消',
-        
-        // 评价相关
-        'review_create': '课后评价',
-        
-        // 月赛相关
+        'review_create': '评价创建',
         'tournament_signup': '月赛报名',
-        'tournament_schedule_generate': '月赛排程生成',
-        
-        // 用户信息更新相关
-        'user_profile_update': '个人信息修改',
+        'user_profile_update': '个人信息更新',
         'user_password_change': '密码修改',
-        
-        // 账户充值相关
-        'account_recharge': '账户缴费',
-        
-        // 许可证相关
-        'license_renew': '许可证续费',
-        'license_activate': '许可证激活'
+        'coach_change_request': '教练更换申请',
+        'coach_change_rejected': '教练更换拒绝',
+        'coach_change_success': '教练更换成功',
+        'account_recharge': '账户充值'
       };
       return actionMap[action] || action;
     }

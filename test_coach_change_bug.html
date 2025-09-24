@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>教练更换申请状态测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+        .test-log { background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+        button { margin: 5px; padding: 8px 15px; border: 1px solid #ddd; background: #fff; cursor: pointer; }
+        button:hover { background: #f5f5f5; }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .info { color: #007bff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>教练更换申请状态测试</h1>
+        
+        <div class="section">
+            <h3>测试场景：未来教练重复同意问题</h3>
+            <p>测试步骤：</p>
+            <ol>
+                <li>创建一个测试申请</li>
+                <li>当前教练拒绝（status变为rejected）</li>
+                <li>未来教练尝试同意（应该成功并重置状态为pending）</li>
+            </ol>
+            
+            <button onclick="createTestRequest()">1. 创建测试申请</button>
+            <button onclick="currentCoachReject()">2. 当前教练拒绝</button>
+            <button onclick="newCoachApprove()">3. 未来教练同意</button>
+            <button onclick="checkRequestStatus()">查看当前状态</button>
+        </div>
+
+        <div class="section">
+            <h3>测试日志</h3>
+            <div id="testLog" class="test-log"></div>
+        </div>
+    </div>
+
+    <script>
+        let testRequestId = null;
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('testLog');
+            const colorClass = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            logDiv.innerHTML += `<div class="${colorClass}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // 设置测试用户环境
+        function setupTestEnvironment() {
+            // 模拟未来教练登录（假设ID=4是未来教练）
+            localStorage.setItem('userData', JSON.stringify({
+                id: 4,
+                role: 'coach',
+                username: 'future_coach',
+                real_name: '未来教练'
+            }));
+            log('设置测试环境：未来教练登录');
+        }
+
+        async function createTestRequest() {
+            try {
+                // 首先检查是否已有测试申请
+                const response = await fetch('/api/coach-change-requests');
+                const data = await response.json();
+                
+                if (data.success && data.requests && data.requests.length > 0) {
+                    testRequestId = data.requests[0].id;
+                    log(`使用现有申请 ID: ${testRequestId}`, 'info');
+                } else {
+                    log('没有找到现有申请，请在学员页面创建一个教练更换申请', 'error');
+                }
+            } catch (error) {
+                log(`创建/查找申请失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function currentCoachReject() {
+            if (!testRequestId) {
+                log('请先创建测试申请', 'error');
+                return;
+            }
+
+            try {
+                // 临时切换到当前教练身份
+                localStorage.setItem('userData', JSON.stringify({
+                    id: 3, // 假设ID=3是当前教练
+                    role: 'coach',
+                    username: 'current_coach',
+                    real_name: '当前教练'
+                }));
+
+                const response = await fetch(`/api/coach-change-request/${testRequestId}/respond`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        approve: false,
+                        response_text: '测试拒绝'
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    log('当前教练拒绝成功，申请状态应该变为rejected', 'success');
+                } else {
+                    log(`当前教练拒绝失败: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log(`当前教练拒绝请求失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function newCoachApprove() {
+            if (!testRequestId) {
+                log('请先创建测试申请', 'error');
+                return;
+            }
+
+            try {
+                // 切换回未来教练身份
+                setupTestEnvironment();
+
+                log('未来教练尝试同意申请...', 'info');
+
+                const response = await fetch(`/api/coach-change-request/${testRequestId}/respond`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        approve: true,
+                        response_text: '测试同意'
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    log('未来教练同意成功！申请状态应该重置为pending', 'success');
+                } else {
+                    log(`未来教练同意失败: ${data.error}`, 'error');
+                    if (data.debug) {
+                        log(`调试信息: ${JSON.stringify(data.debug)}`, 'info');
+                    }
+                }
+            } catch (error) {
+                log(`未来教练同意请求失败: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkRequestStatus() {
+            if (!testRequestId) {
+                log('请先创建测试申请', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/coach-change-requests');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const request = data.requests.find(req => req.id == testRequestId);
+                    if (request) {
+                        log(`申请状态: ${request.status}`, 'info');
+                        log(`当前教练响应: ${request.current_coach_response || '无'}`, 'info');
+                        log(`未来教练响应: ${request.new_coach_response || '无'}`, 'info');
+                        log(`管理员响应: ${request.admin_response || '无'}`, 'info');
+                    } else {
+                        log('找不到测试申请', 'error');
+                    }
+                } else {
+                    log(`查询申请状态失败: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log(`查询申请状态失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载时设置测试环境
+        document.addEventListener('DOMContentLoaded', function() {
+            setupTestEnvironment();
+            log('页面加载完成，测试环境已准备好');
+        });
+    </script>
+</body>
+</html>

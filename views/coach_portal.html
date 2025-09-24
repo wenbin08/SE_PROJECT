@@ -422,24 +422,45 @@
           
           const isCurrentCoach = req.current_coach_id === coachData.id;
           const isNewCoach = req.new_coach_id === coachData.id;
-          const canRespond = req.status === 'pending' || 
-                            (req.status === 'current_coach_approved' && isNewCoach) ||
-                            (req.status === 'new_coach_approved' && isCurrentCoach);
+          
+          // 判断当前教练是否已响应
+          const hasCurrentCoachResponse = req.current_coach_response && req.current_coach_response !== '';
+          const hasNewCoachResponse = req.new_coach_response && req.new_coach_response !== '';
+          
+          // 当前教练是否需要响应
+          const needsCurrentCoachResponse = isCurrentCoach && !hasCurrentCoachResponse;
+          const needsNewCoachResponse = isNewCoach && !hasNewCoachResponse;
+          
+          // 只要申请没有被拒绝、没有完成，并且当前教练尚未响应，就可以响应
+          const canRespond = req.status !== 'rejected' && req.status !== 'completed' && 
+                           ((isCurrentCoach && !hasCurrentCoachResponse) || (isNewCoach && !hasNewCoachResponse));
+          
+          // 获取当前状态说明
+          let statusText = statusMap[req.status] || req.status;
+          if (isCurrentCoach && hasCurrentCoachResponse) {
+            statusText += " (您已响应)";
+          } else if (isNewCoach && hasNewCoachResponse) {
+            statusText += " (您已响应)";
+          }
           
           return `
             <tr>
               <td>${req.id}</td>
               <td>${req.student_name}</td>
-              <td>${req.current_coach_name}</td>
-              <td>${req.new_coach_name}</td>
+              <td>${req.current_coach_name}${isCurrentCoach ? ' (您)' : ''}</td>
+              <td>${req.new_coach_name}${isNewCoach ? ' (您)' : ''}</td>
               <td title="${req.reason}">${req.reason ? req.reason.substring(0, 20) + '...' : '无'}</td>
-              <td><span class="badge ${req.status === 'pending' ? 'badge-warning' : req.status === 'rejected' ? 'badge-danger' : 'badge-info'}">${statusMap[req.status] || req.status}</span></td>
+              <td>
+                <span class="badge badge-info">当前教练: ${req.current_coach_response ? (req.current_coach_response === '拒绝' ? '已拒绝' : '已同意') : '待响应'}</span>
+                <span class="badge badge-info">新教练: ${req.new_coach_response ? (req.new_coach_response === '拒绝' ? '已拒绝' : '已同意') : '待响应'}</span>
+                <span class="badge ${req.status === 'rejected' ? 'badge-danger' : req.status === 'completed' ? 'badge-success' : 'badge-warning'}">${statusText}</span>
+              </td>
               <td>${new Date(req.created_at).toLocaleString()}</td>
               <td>
                 ${canRespond ? `
                   <button class="btn btn-sm btn-success" onclick="respondToChangeRequest(${req.id}, true, '${isCurrentCoach ? 'current' : 'new'}')">同意</button>
                   <button class="btn btn-sm btn-danger ml-1" onclick="respondToChangeRequest(${req.id}, false, '${isCurrentCoach ? 'current' : 'new'}')">拒绝</button>
-                ` : '无需操作'}
+                ` : (req.status === 'rejected' ? '已拒绝' : req.status === 'completed' ? '已完成' : '已响应')}
               </td>
             </tr>
           `;
@@ -459,20 +480,28 @@
       }
       
       try {
+        const requestData = {
+          user_id: coachData.id,
+          user_role: 'coach',
+          approve: approve,
+          response_text: response || ''
+        };
+        
+        console.log('[前端] 发送教练更换响应:', requestData);
+        console.log('[前端] coachData:', coachData);
+        
         const res = await fetch(`/api/coach-change-request/${requestId}/respond`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: coachData.id,
-            user_type: coachType + '_coach',
-            approve: approve,
-            response_text: response || ''
-          })
+          body: JSON.stringify(requestData)
         });
         
         const data = await res.json();
+        console.log('[前端] 服务器响应:', { status: res.status, data });
+        
         if (!res.ok || !data.success) {
-          alert(data.error || '操作失败');
+          console.error('[前端] 请求失败:', data);
+          alert(`操作失败: ${data.error || '未知错误'}${data.debug ? '\n调试信息: ' + JSON.stringify(data.debug) : ''}`);
           return;
         }
         
