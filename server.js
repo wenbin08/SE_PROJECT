@@ -59,19 +59,11 @@ db.connect((err) => {
   const auditSql = `CREATE TABLE IF NOT EXISTS audit_log (
     id INT PRIMARY KEY AUTO_INCREMENT,
     action VARCHAR(100) NOT NULL,
-    user_id INT NULL,
-    details JSON,
-    ip_address VARCHAR(45),
-    user_agent TEXT,
+    actor_id INT NULL,
+    details TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   )`;
-  db.query(auditSql, (err) => {
-    if (err) {
-      console.error('创建audit_log表失败:', err);
-    } else {
-      console.log('audit_log表已确保存在');
-    }
-  });
+  db.query(auditSql, ()=>{});
   // 启动时尝试创建默认账号（可控的幂等写入）
   ensureDefaultUsers();
 });
@@ -80,7 +72,7 @@ db.connect((err) => {
 function logAudit(action, actorId, detailsObj) {
   try {
     const details = detailsObj ? JSON.stringify(detailsObj) : null;
-    db.query(`INSERT INTO audit_log (action, user_id, details) VALUES (?, ?, ?)`, 
+    db.query(`INSERT INTO audit_log (action, actor_id, details) VALUES (?, ?, ?)`, 
       [action, actorId || null, details], (err) => {
         if (err) console.error('审计日志记录失败:', err);
       });
@@ -167,15 +159,11 @@ app.post('/api/register/student', (req, res) => {
   // 直接存储明文密码
   const sql = `INSERT INTO user (username, password_hash, real_name, gender, age, campus_id, phone, email, role, status)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'student', 'active')`;
-  db.query(sql, [username, password, real_name, gender || '男', age || null, campus_id, phone, email || null], (err, result) => {
+  db.query(sql, [username, password, real_name, gender || '男', age || null, campus_id, phone, email || null], (err) => {
     if (err) {
       if (err.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: '用户名已存在' });
       return res.status(500).json({ error: '注册失败' });
     }
-    
-    // 记录学员注册日志
-    logAudit('student_register', result.insertId, { username, campus_id, real_name });
-    
     res.json({ success: true });
   });
 });
@@ -209,27 +197,11 @@ app.post('/api/login', (req, res) => {
   if (!username || !password) return res.status(400).json({ error: '缺少参数' });
   db.query('SELECT * FROM user WHERE username=?', [username], (err, results) => {
     if (err) return res.status(500).json({ error: '查询失败' });
-    if (!results || results.length === 0) {
-      // 记录失败的登录尝试
-      logAudit('login_failed', null, { username, reason: '用户不存在' });
-      return res.status(400).json({ error: '用户不存在' });
-    }
+    if (!results || results.length === 0) return res.status(400).json({ error: '用户不存在' });
     const u = results[0];
     // 直接比较明文密码
-    if (password !== u.password_hash) {
-      // 记录失败的登录尝试
-      logAudit('login_failed', u.id, { username, reason: '密码错误' });
-      return res.status(400).json({ error: '密码错误' });
-    }
-    if (u.role === 'coach' && u.status !== 'active') {
-      // 记录失败的登录尝试
-      logAudit('login_failed', u.id, { username, reason: '教练员待审核或已拒绝' });
-      return res.status(403).json({ error: '教练员待审核或已拒绝' });
-    }
-    
-    // 记录成功的登录
-    logAudit('user_login', u.id, { username, role: u.role });
-    
+    if (password !== u.password_hash) return res.status(400).json({ error: '密码错误' });
+    if (u.role === 'coach' && u.status !== 'active') return res.status(403).json({ error: '教练员待审核或已拒绝' });
     res.json({ success: true, data: { id: u.id, role: u.role, real_name: u.real_name, campus_id: u.campus_id, username: u.username } });
   });
 });
@@ -600,9 +572,6 @@ app.post('/api/account/recharge', (req, res) => {
           // 不返回错误，因为充值已经成功
         }
       });
-    
-    // 记录审计日志
-    logAudit('account_recharge', user_id, { amount, method, description: `${method === 'wechat' ? '微信' : method === 'alipay' ? '支付宝' : '线下'}充值` });
     
     res.json({ success: true });
   });
@@ -1448,6 +1417,7 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
         return;
       }
       
+<<<<<<< HEAD
       // 4. 如果同意，更新响应并设置对应的状态
       let newStatus = 'pending'; // 默认状态
       if (user_role === 'coach') {
@@ -1462,6 +1432,11 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
       
       db.query(`UPDATE coach_change_request SET ${updateField}=?, status=? WHERE id=?`, 
         [response_text || '同意', newStatus, id], (err) => {
+=======
+      // 4. 如果同意，更新响应并检查是否三方都同意
+      db.query(`UPDATE coach_change_request SET ${updateField}=? WHERE id=?`, 
+        [response_text || '同意', id], (err) => {
+>>>>>>> parent of f291bff (fix bugs)
         if (err) return res.status(500).json({ error: '更新失败' });
         
         // 获取更新后的申请状态
@@ -1473,19 +1448,8 @@ app.post('/api/coach-change-request/:id/respond', (req, res) => {
           const hasNewCoachApproval = req.new_coach_response && req.new_coach_response !== '拒绝';
           const hasAdminApproval = req.admin_response && req.admin_response !== '拒绝';
           
-          console.log('教练更换申请审核状态:', {
-            requestId: id,
-            currentCoachResponse: req.current_coach_response,
-            newCoachResponse: req.new_coach_response,
-            adminResponse: req.admin_response,
-            hasCurrentCoachApproval,
-            hasNewCoachApproval,
-            hasAdminApproval
-          });
-          
           // 5. 检查是否三方都同意
           if (hasCurrentCoachApproval && hasNewCoachApproval && hasAdminApproval) {
-            console.log('三方均已同意，执行教练更换');
             // 执行教练更换
             executeCoachChange(req.student_id, req.current_coach_id, req.new_coach_id, id, res);
           } else {
@@ -1564,15 +1528,14 @@ app.get('/api/coach-change-requests', (req, res) => {
     whereClause = 'WHERE ccr.student_id = ?';
     params = [user_id];
   } else if (user_role === 'coach') {
-    whereClause = `WHERE (ccr.current_coach_id = ? OR ccr.new_coach_id = ?) 
-                  AND ccr.status NOT IN ('completed', 'rejected')`;
+    whereClause = 'WHERE (ccr.current_coach_id = ? OR ccr.new_coach_id = ?) AND ccr.status != "completed"';
     params = [user_id, user_id];
   } else if (user_role === 'campus_admin') {
     whereClause = `WHERE ccr.student_id IN (
       SELECT u.id FROM user u WHERE u.campus_id = (
         SELECT campus_id FROM user WHERE id = ? AND role = 'campus_admin'
       )
-    ) AND ccr.status NOT IN ('completed', 'rejected')`;
+    ) AND ccr.status != "completed"`;
     params = [user_id];
   } else {
     return res.status(400).json({ error: '无效的用户角色' });
@@ -2264,144 +2227,21 @@ app.get('/api/transactions', (req, res) => {
 
 // 获取审计日志（管理员专用）
 app.get('/api/admin/audit-log', (req, res) => {
-  const { action, actor_id, campus_id, from, to, username, limit = 100 } = req.query;
+  const { action, actor_id, from, to, limit = 100 } = req.query;
   let where = ['1=1'];
   let params = [];
   
   if (action) { where.push('action LIKE ?'); params.push(`%${action}%`); }
-  if (actor_id) { where.push('a.user_id=?'); params.push(actor_id); }
-  if (username) { where.push('(u.username LIKE ? OR u.real_name LIKE ?)'); params.push(`%${username}%`, `%${username}%`); }
-  if (from) { where.push('a.created_at>=?'); params.push(from); }
-  if (to) { where.push('a.created_at<=?'); params.push(to); }
+  if (actor_id) { where.push('actor_id=?'); params.push(actor_id); }
+  if (from) { where.push('created_at>=?'); params.push(from); }
+  if (to) { where.push('created_at<=?'); params.push(to); }
   
-  // 如果指定了校区ID，则只显示该校区用户的日志
-  if (campus_id) {
-    where.push('(a.user_id IS NULL OR u.campus_id=?)');
-    params.push(campus_id);
-  }
-  
-  const sql = `
-    SELECT a.*, u.real_name, u.username, u.campus_id 
-    FROM audit_log a 
-    LEFT JOIN user u ON a.user_id = u.id 
-    WHERE ${where.join(' AND ')} 
-    ORDER BY a.created_at DESC 
-    LIMIT ?
-  `;
+  const sql = `SELECT * FROM audit_log WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?`;
   params.push(parseInt(limit));
   
   db.query(sql, params, (err, rows) => {
-    if (err) {
-      console.error('audit-log查询失败:', err);
-      return res.status(500).json({ error: '查询失败: ' + err.message });
-    }
-    
-    // 为每条日志增加用户信息
-    const enrichedLogs = rows.map(log => ({
-      ...log,
-      user_info: log.real_name ? `${log.real_name}(${log.username})` : '系统'
-    }));
-    
-    res.json(enrichedLogs);
-  });
-});
-
-// 测试audit_log表状态的API
-app.get('/api/admin/audit-log-test', (req, res) => {
-  // 测试表是否存在
-  db.query('SHOW TABLES LIKE "audit_log"', (err, tables) => {
-    if (err) {
-      return res.json({ 
-        error: '数据库查询失败: ' + err.message,
-        tableExists: false 
-      });
-    }
-    
-    if (tables.length === 0) {
-      return res.json({ 
-        error: 'audit_log表不存在',
-        tableExists: false 
-      });
-    }
-    
-    // 检查表结构
-    db.query('DESCRIBE audit_log', (err, structure) => {
-      if (err) {
-        return res.json({ 
-          error: '获取表结构失败: ' + err.message,
-          tableExists: true 
-        });
-      }
-      
-      // 检查数据数量
-      db.query('SELECT COUNT(*) as count FROM audit_log', (err, count) => {
-        if (err) {
-          return res.json({ 
-            error: '统计数据失败: ' + err.message,
-            tableExists: true,
-            structure: structure 
-          });
-        }
-        
-        res.json({
-          tableExists: true,
-          structure: structure,
-          recordCount: count[0].count,
-          message: 'audit_log表正常'
-        });
-      });
-    });
-  });
-});
-
-// 手动添加测试日志的API
-app.post('/api/admin/add-test-log', (req, res) => {
-  const testLogs = [
-    ['user_login', 1, JSON.stringify({ username: 'test_user', role: 'student' })],
-    ['student_register', 2, JSON.stringify({ username: 'new_student', campus_id: 1 })],
-    ['coach_approve', null, JSON.stringify({ coach_id: 3, approve: true })],
-    ['reservation_create', 1, JSON.stringify({ coach_id: 3, start_time: '2025-01-20 10:00:00' })]
-  ];
-  
-  let completed = 0;
-  const total = testLogs.length;
-  
-  testLogs.forEach(([action, user_id, details]) => {
-    db.query('INSERT INTO audit_log (action, user_id, details) VALUES (?, ?, ?)', 
-      [action, user_id, details], (err) => {
-        if (err) console.error('插入测试日志失败:', err);
-        completed++;
-        if (completed === total) {
-          res.json({ 
-            success: true, 
-            message: `已添加 ${total} 条测试日志` 
-          });
-        }
-      });
-  });
-});
-
-// 确保audit_log表存在的API
-app.post('/api/admin/ensure-audit-log-table', (req, res) => {
-  const createTableSQL = `
-    CREATE TABLE IF NOT EXISTS audit_log (
-      id INT PRIMARY KEY AUTO_INCREMENT,
-      action VARCHAR(100) NOT NULL,
-      user_id INT,
-      details JSON,
-      ip_address VARCHAR(45),
-      user_agent TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `;
-  
-  db.query(createTableSQL, (err) => {
-    if (err) {
-      console.error('创建audit_log表失败:', err);
-      return res.status(500).json({ error: '创建表失败: ' + err.message });
-    }
-    
-    res.json({ success: true, message: 'audit_log表已确保存在' });
+    if (err) return res.status(500).json({ error: '查询失败' });
+    res.json(rows);
   });
 });
 
@@ -2418,38 +2258,18 @@ app.get('/api/admin/statistics', (req, res) => {
   
   // 用户统计
   db.query(`SELECT role, COUNT(*) as count FROM user ${whereClause} GROUP BY role`, (e1, userStats) => {
-    if (e1) {
-      console.error('用户统计查询失败:', e1);
-      return res.status(500).json({ error: '用户统计失败: ' + e1.message });
-    }
-    
-    console.log('用户统计结果:', userStats);
-    stats.users = userStats ? userStats.reduce((acc, row) => ({ ...acc, [row.role]: row.count }), {}) : {};
+    if (e1) return res.status(500).json({ error: '统计失败' });
+    stats.users = userStats.reduce((acc, row) => ({ ...acc, [row.role]: row.count }), {});
     
     // 预约统计
-    const reservationQuery = campus_id ? 
-      `SELECT status, COUNT(*) as count FROM reservation WHERE campus_id=${campus_id} GROUP BY status` :
-      `SELECT status, COUNT(*) as count FROM reservation GROUP BY status`;
-    
-    db.query(reservationQuery, (e2, resStats) => {
-      if (e2) {
-        console.error('预约统计查询失败:', e2);
-        return res.status(500).json({ error: '预约统计失败: ' + e2.message });
-      }
-      
-      console.log('预约统计结果:', resStats);
-      stats.reservations = resStats ? resStats.reduce((acc, row) => ({ ...acc, [row.status]: row.count }), {}) : {};
+    db.query(`SELECT status, COUNT(*) as count FROM reservation r ${whereClause ? `WHERE r.campus_id=${campus_id}` : ''} GROUP BY status`, (e2, resStats) => {
+      if (e2) return res.status(500).json({ error: '统计失败' });
+      stats.reservations = resStats.reduce((acc, row) => ({ ...acc, [row.status]: row.count }), {});
       
       // 收入统计
-      db.query(`SELECT type, SUM(amount) as total FROM transaction WHERE amount > 0 GROUP BY type`, (e3, revStats) => {
-        if (e3) {
-          console.error('收入统计查询失败:', e3);
-          // 不让收入统计失败影响整个API
-          stats.revenue = {};
-        } else {
-          console.log('收入统计结果:', revStats);
-          stats.revenue = revStats ? revStats.reduce((acc, row) => ({ ...acc, [row.type]: row.total }), {}) : {};
-        }
+      db.query(`SELECT type, SUM(amount) as total FROM \`transaction\` WHERE amount > 0 GROUP BY type`, (e3, revStats) => {
+        if (e3) return res.status(500).json({ error: '统计失败' });
+        stats.revenue = revStats.reduce((acc, row) => ({ ...acc, [row.type]: row.total }), {});
         
         res.json(stats);
       });
@@ -3350,6 +3170,7 @@ function checkUpcomingLessons() {
     LEFT JOIN table_court t ON r.table_id = t.id
     WHERE r.status = 'confirmed' 
     AND r.start_time BETWEEN ? AND ?
+    AND r.reminder_sent = 0
   `;
   
   db.query(sql, [fiveMinutesLater, oneHourLater], (err, lessons) => {
@@ -3375,10 +3196,10 @@ function checkUpcomingLessons() {
         `您有课程即将开始！时间：${startTime}，学员：${lesson.student_name}，球台：${lesson.table_code || '待分配'}`
       );
       
-      // 标记提醒已发送 (暂时注释掉，避免字段不存在错误)
-      // db.query('UPDATE reservation SET reminder_sent = 1 WHERE id = ?', [lesson.id], (err) => {
-      //   if (err) console.error('更新提醒状态失败:', err);
-      // });
+      // 标记提醒已发送
+      db.query('UPDATE reservation SET reminder_sent = 1 WHERE id = ?', [lesson.id], (err) => {
+        if (err) console.error('更新提醒状态失败:', err);
+      });
       
       console.log(`课程提醒已发送: ${lesson.student_name} - ${lesson.coach_name} @ ${startTime}`);
     });
@@ -4475,8 +4296,6 @@ app.post('/api/campuses', (req, res) => {
 
 // 超级管理员统计数据
 app.get('/api/super-admin/statistics', (req, res) => {
-  console.log('超级管理员统计数据API被调用');
-  
   const queries = {
     total_campuses: 'SELECT COUNT(*) as count FROM campus',
     total_users: 'SELECT COUNT(*) as count FROM user',
@@ -4487,90 +4306,33 @@ app.get('/api/super-admin/statistics', (req, res) => {
       FROM campus c 
       LEFT JOIN user u ON c.id = u.campus_id 
       GROUP BY c.id, c.name 
-      ORDER BY c.id
+      ORDER BY user_count DESC
     `
   };
   
-  // 确保查询返回有效数据
-  const handleQuery = (query, defaultValue) => {
-    return new Promise((resolve, reject) => {
-      db.query(query, (err, rows) => {
-        if (err) {
-          console.error('查询执行错误:', err);
-          return reject(err);
-        }
-        
-        console.log('查询结果:', query.substring(0, 50) + '...', rows);
-        
-        if (!rows || rows.length === 0) {
-          console.log('查询无数据，返回默认值:', defaultValue);
-          return resolve(defaultValue);
-        }
-        
-        if (query.includes('COUNT(*)')) {
-          const count = rows[0]?.count || 0;
-          console.log('统计查询结果:', count);
-          resolve(count);
-        } else {
-          resolve(rows);
-        }
-      });
-    });
-  };
-  
   Promise.all([
-    handleQuery(queries.total_campuses, 0),
-    handleQuery(queries.total_users, 0),
-    handleQuery(queries.total_coaches, 0),
-    handleQuery(queries.total_students, 0),
-    handleQuery(queries.campus_distribution, [])
+    new Promise((resolve, reject) => db.query(queries.total_campuses, (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.total_users, (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.total_coaches, (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.total_students, (err, rows) => err ? reject(err) : resolve(rows[0].count))),
+    new Promise((resolve, reject) => db.query(queries.campus_distribution, (err, rows) => err ? reject(err) : resolve(rows)))
   ]).then(results => {
     const campusData = results[4];
-    console.log('校区分布数据对象:', JSON.stringify(campusData, null, 2));
-    
-    // 如果没有校区数据，手动创建一个示例数据以显示图表效果
-    if (!campusData || campusData.length === 0) {
-      console.log('没有校区数据，创建示例数据');
-      campusData.push({ campus_name: '示例校区', user_count: 0 });
-    }
-    
-    // 确保所有数据都是正确的格式
-    const labels = campusData.map(row => {
-      const name = row.campus_name || '未命名校区';
-      console.log('校区名称:', name);
-      return name;
-    });
-    
-    const values = campusData.map(row => {
-      // 确保转换为数字
-      const count = parseInt(row.user_count || '0', 10);
-      console.log('用户数量:', count);
-      return count;
-    });
-    
-    console.log('处理后的标签:', labels);
-    console.log('处理后的数值:', values);
-    
     const data = {
       total_campuses: results[0],
       total_users: results[1],
       total_coaches: results[2],
       total_students: results[3],
       campus_distribution: {
-        labels: labels,
-        values: values
+        labels: campusData.map(row => row.campus_name),
+        values: campusData.map(row => row.user_count)
       }
     };
     
-    console.log('统计响应数据:', JSON.stringify(data, null, 2));
     res.json(data);
   }).catch(err => {
     console.error('统计查询失败:', err);
-    res.status(500).json({ 
-      error: '统计查询失败', 
-      details: err.message,
-      code: err.code 
-    });
+    res.status(500).json({ error: '统计查询失败' });
   });
 });
 
@@ -4680,7 +4442,7 @@ function checkLicense(req, res, next) {
 // app.use('/api/', checkLicense);
 
 // 启动服务器
-const port = process.env.PORT || 3001; // 使用3001端口
+const port = process.env.PORT || 3000; // 使用3000端口
 app.listen(port, () => {
   console.log(`乒乓球培训管理系统服务已在端口 ${port} 运行`);
 });
