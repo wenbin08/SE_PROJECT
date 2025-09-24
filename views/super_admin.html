@@ -122,6 +122,10 @@
 
 
         <!-- 用户管理 -->
+        <!-- 修复: 补充缺失的systemStats容器结束标签，避免后续区块被包含导致显示异常 -->
+        </div>
+        
+        <!-- 用户管理 -->
         <div id="userManagement" class="content-section" style="display: none;">
           <h4 class="mb-4">全局用户管理</h4>
           
@@ -1073,50 +1077,29 @@
     // 获取操作类型的中文描述
     function getActionText(action) {
       const actionMap = {
-        // 用户登录相关
         'user_login': '用户登录',
         'login_failed': '登录失败',
-        
-        // 用户注册相关
         'student_register': '学员注册',
         'coach_register': '教练注册',
-        
-        // 教练审核相关
         'coach_approve': '教练审核',
-        
-        // 教练选择相关
         'coach_select_request': '教练选择申请',
         'coach_select_approve': '教练选择审核',
-        
-        // 教练更换相关
-        'coach_change_request': '教练更换申请',
-        'coach_change_rejected': '教练更换拒绝',
-        'coach_change_success': '教练更换成功',
-        
-        // 预约相关
-        'reservation_create': '课程预约',
+        'reservation_create': '预约创建',
         'reservation_confirm': '预约确认',
         'reservation_reject': '预约拒绝',
         'reservation_complete': '预约完成',
         'reservation_cancel': '预约取消',
-        
-        // 评价相关
-        'review_create': '课后评价',
-        
-        // 月赛相关
+        'review_create': '评价创建',
         'tournament_signup': '月赛报名',
         'tournament_schedule_generate': '月赛排程生成',
-        
-        // 用户信息更新相关
-        'user_profile_update': '个人信息修改',
+        'user_profile_update': '个人信息更新',
         'user_password_change': '密码修改',
-        
-        // 账户充值相关
-        'account_recharge': '账户缴费',
-        
-        // 许可证相关
-        'license_renew': '许可证续费',
-        'license_activate': '许可证激活'
+        'coach_change_request': '教练更换申请',
+        'coach_change_rejected': '教练更换拒绝',
+        'coach_change_success': '教练更换成功',
+        'account_recharge': '账户充值',
+        'admin_recharge': '管理员充值',
+        'license_renew': '许可证续费'
       };
       return actionMap[action] || action;
     }

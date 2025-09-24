@@ -981,7 +981,6 @@ app.post('/api/license/activate', (req, res) => {
   const sql = `INSERT INTO license (purchaser_org, device_fingerprint, license_key, start_date, end_date) VALUES (?, ?, ?, ?, ?)`;
   db.query(sql, [purchaser_org, device_fingerprint, license_key, start_date, end_date], (err)=>{
     if (err) return res.status(500).json({ error: '激活失败' });
-    logAudit('license_activate', null, { purchaser_org, license_key, device_fingerprint });
     refreshLicenseCache(()=> res.json({ success: true }));
   });
 });
@@ -4577,14 +4576,28 @@ app.get('/api/super-admin/statistics', (req, res) => {
 
 // 超级管理员获取所有用户
 app.get('/api/super-admin/users', (req, res) => {
-  const sql = `
+  const { search } = req.query;
+  
+  let sql = `
     SELECT u.*, c.name as campus_name 
     FROM user u 
     LEFT JOIN campus c ON u.campus_id = c.id 
-    ORDER BY u.created_at DESC
   `;
-  db.query(sql, (err, results) => {
-    if (err) return res.status(500).json({ error: '查询失败' });
+  
+  const params = [];
+  if (search) {
+    sql += ` WHERE u.username LIKE ? OR u.real_name LIKE ? OR u.phone LIKE ?`;
+    const searchTerm = `%${search}%`;
+    params.push(searchTerm, searchTerm, searchTerm);
+  }
+  
+  sql += ` ORDER BY u.created_at DESC`;
+
+  db.query(sql, params, (err, results) => {
+    if (err) {
+      console.error("查询用户失败:", err);
+      return res.status(500).json({ error: '查询失败' });
+    }
     res.json(results);
   });
 });
